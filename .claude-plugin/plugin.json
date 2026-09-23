@@ -1,0 +1,9 @@
+{
+  "name": "marek-cc-hooks",
+  "version": "0.1.0",
+  "description": "Přenosné Claude Code hooky (SessionStart brain-context, PreCompact dokumentační norma). Synchronizuje se přes účet na každý stroj, kde je plugin povolený.",
+  "author": {
+    "name": "Marek"
+  },
+  "hooks": "./hooks/hooks.json"
+}

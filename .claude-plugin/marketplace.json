@@ -1,0 +1,16 @@
+{
+  "name": "marek-hooks",
+  "owner": {
+    "name": "Marek"
+  },
+  "metadata": {
+    "description": "Osobní marketplace s přenosnými Claude Code hooky."
+  },
+  "plugins": [
+    {
+      "name": "marek-cc-hooks",
+      "source": "./",
+      "description": "SessionStart brain-context + PreCompact dokumentační norma; přenosné přes účet."
+    }
+  ]
+}
