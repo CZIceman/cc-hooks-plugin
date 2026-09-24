@@ -8,12 +8,12 @@ plugin v účtu povolený, synchronizuje se na každý stroj, kde běží Claude
 
 | Hook | Událost | Co dělá |
 |---|---|---|
-| `brain-context.sh` | `SessionStart` | vloží kontext znalostní báze (pravidla + obory). Sám najde bázi (`BRAIN_PATH` → `~/SecondBrain` → `$HOME/mnt/*` → `/srv/brain`); bez báze tiše mlčí |
 | `claude-md-check.sh` | `SessionStart` | upozorní, když repu chybí `CLAUDE.md`, nebo když existuje, ale není commitnutý (netrackovaný se ztratí při klonu a nikdo si toho nevšimne). Mimo git repo mlčí |
 | `docs-norm-precompact.sh` | `PreCompact` | po zhuštění kontextu znovu vloží dokumentační normu + přehled necommitnutých změn. Neblokuje, best-effort, vždy `exit 0` |
 
-Všechny jsou přenosné: na stroji bez Second Brain báze se `brain-context` neozve,
-`claude-md-check` i `docs-norm` fungují v jakémkoli git projektu.
+Oba jsou přenosné: `claude-md-check` i `docs-norm` fungují v jakémkoli git projektu.
+(Hook `brain-context` pro znalostní bázi byl 24. 9. 2026 odstraněn — báze je teď MCP
+server a pravidla předává sám při připojení.)
 
 ## Instalace (jednou, ať se pak synchronizuje sama)
 
@@ -29,8 +29,7 @@ claude plugin install marek-cc-hooks@marek-hooks
 
 Dokud jsou tytéž hooky i v `~/.claude/settings.json`, spustí se **dvakrát**.
 Po povolení pluginu na stroji odeber z `~/.claude/settings.json` bloky
-`SessionStart`/`PreCompact`, které volají `brain-context`, `claude-md-check`
-a `docs-norm-precompact.sh`.
+`SessionStart`/`PreCompact`, které volají `claude-md-check` a `docs-norm-precompact.sh`.
 
 ## Offline
 

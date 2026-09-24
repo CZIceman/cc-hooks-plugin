@@ -36,13 +36,12 @@ claude plugin install marek-cc-hooks@marek-hooks
 
 Plugin i `~/.claude/settings.json` nesou tytéž hooky → spustí se **dvakrát**.
 Po ověření, že plugin na stroji běží (`claude plugin list`), odeber z
-`~/.claude/settings.json` bloky `SessionStart` (`brain-context`) a `PreCompact`
+`~/.claude/settings.json` bloky `SessionStart` (`claude-md-check`) a `PreCompact`
 (`docs-norm-precompact.sh`). Ostatní nastavení nech.
 
 ## Ověřeno
 
 - `claude plugin validate --strict` — plugin i marketplace manifest projdou `[T]`
-- oba hook skripty samostatně: `brain-context.sh` najde bázi a vypíše kontext;
-  bez báze tiše `exit 0`; `docs-norm-precompact.sh` vypíše normu + necommitnuté
+- hook skripty samostatně: `docs-norm-precompact.sh` vypíše normu + necommitnuté
   změny, `exit 0` `[T]`
 - co zatím **není** ověřeno: účtová synchronizace pluginu (cesty A/B výše)
