@@ -13,6 +13,7 @@ Máme sdílenou znalostní bázi Second Brain (konektor MCP). Než začneš ře�
 zavolej `pravidla` (jednou za session) a `hledej` (1–3 klíčová slova). Je to levné a často to ušetří
 práci: možná jsme to už řešili, nebo víme, co nefunguje. Vše důležité, co zjistíš, včetně slepých uliček
 a chyb (ať se neopakují), zapisuj do báze hned (`zapis`).
-Když konektor v session chybí, řekni to.
+Nástroje konektoru mohou být odložené: načti je přes ToolSearch (dotaz „Second Brain“). Teprve když je
+nenajde ani ToolSearch, řekni, že konektor chybí.
 TEXT
 exit 0
