@@ -7,7 +7,7 @@ Cíl: hooky napsat jednou a mít je na **každém stroji** bez ručního nastavo
 
 | Cesta | Jak | Rozveze se sama? | Míra jistoty |
 |---|---|---|---|
-| **A. Účet + marketplace na GitHubu** | repo na GitHub → `claude plugin marketplace add <gh>` → povolit v účtu claude.ai | ano, na každý stroj po přihlášení | `[O]` — účtová distribuce pluginů je zdokumentovaná cesta, ale u nás neověřená |
+| **A. Účet + marketplace na GitHubu** | repo na GitHub → `claude plugin marketplace add <gh>` → povolit v účtu claude.ai | ano, na každý stroj po přihlášení | `[T]` 23. 9. 2026 — marketplace v claude.ai (Customize → Plugins) + plugin zapnutý → stáhne se při startu nové session na server, notebook i chytrolin. **Update se rozveze až po obnově marketplace v claude.ai** |
 | **B. Účet + marketplace na Forgejo** | repo na `git.airvisions.cz` → `marketplace add <url>` → povolit v účtu | **nejisté** — jestli účet claude.ai umí táhnout z vlastního Forgejo | `[O]` — neověřeno; hlavní nejistota |
 | **C. Ruční `marketplace add` na každém stroji** | na každém stroji `marketplace add <url>` + `install` | ne, krok na stroj (jako dřív hooky) | `[K]` — funguje lokálně (ověřeno validací + instalací) |
 
@@ -44,4 +44,4 @@ Po ověření, že plugin na stroji běží (`claude plugin list`), odeber z
 - `claude plugin validate --strict` — plugin i marketplace manifest projdou `[T]`
 - hook skripty samostatně: `docs-norm-precompact.sh` vypíše normu + necommitnuté
   změny, `exit 0` `[T]`
-- co zatím **není** ověřeno: účtová synchronizace pluginu (cesty A/B výše)
+- účtová synchronizace pluginu (cesta A) ověřena 23. 9. 2026 `[T]`; cesta B (Forgejo) se nepoužívá
