@@ -10,7 +10,7 @@
     {
       "name": "marek-cc-hooks",
       "source": "./",
-      "description": "SessionStart kontrola CLAUDE.md + PreCompact dokumentační norma; přenosné přes účet."
+      "description": "Hooky znalostní báze Second Brain (SessionStart: nejdřív hledej v bázi; PreCompact: zapiš zjištění); přenosné přes účet."
     }
   ]
 }

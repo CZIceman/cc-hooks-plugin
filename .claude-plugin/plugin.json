@@ -1,7 +1,7 @@
 {
   "name": "marek-cc-hooks",
-  "version": "0.2.0",
-  "description": "Přenosné Claude Code hooky (SessionStart kontrola CLAUDE.md, PreCompact dokumentační norma). Synchronizuje se přes účet na každý stroj, kde je plugin povolený.",
+  "version": "0.3.0",
+  "description": "Přenosné Claude Code hooky pro znalostní bázi Second Brain: SessionStart připomene hledat v bázi před řešením, PreCompact připomene zapsat zjištění. Synchronizuje se přes účet.",
   "author": {
     "name": "Marek"
   },

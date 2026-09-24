@@ -12,7 +12,7 @@ Cíl: hooky napsat jednou a mít je na **každém stroji** bez ručního nastavo
 | **C. Ruční `marketplace add` na každém stroji** | na každém stroji `marketplace add <url>` + `install` | ne, krok na stroj (jako dřív hooky) | `[K]` — funguje lokálně (ověřeno validací + instalací) |
 
 **Rozhodnutí patří Markovi:** kam marketplace hostovat. Zbytek repa je hotový
-a na host-neutrální. Skilly (`/hledej`, `/zapis`, `/vytah`) se přes účet
+a na host-neutrální. Skilly se přes účet
 synchronizují prokazatelně — plugin je jejich analogie pro hooky; jestli účtová
 synchronizace pluginů jede i z Forgejo, je jediný neověřený článek.
 
@@ -36,12 +36,11 @@ claude plugin install marek-cc-hooks@marek-hooks
 
 Plugin i `~/.claude/settings.json` nesou tytéž hooky → spustí se **dvakrát**.
 Po ověření, že plugin na stroji běží (`claude plugin list`), odeber z
-`~/.claude/settings.json` bloky `SessionStart` (`claude-md-check`) a `PreCompact`
-(`docs-norm-precompact.sh`). Ostatní nastavení nech.
+`~/.claude/settings.json` bloky `SessionStart` a `PreCompact` se stejnými hooky.
+Ostatní nastavení nech.
 
 ## Ověřeno
 
 - `claude plugin validate --strict` — plugin i marketplace manifest projdou `[T]`
-- hook skripty samostatně: `docs-norm-precompact.sh` vypíše normu + necommitnuté
-  změny, `exit 0` `[T]`
+- hook skripty samostatně: `baze-start.sh` a `baze-precompact.sh` vypíšou text, `exit 0` `[T]`
 - účtová synchronizace pluginu (cesta A) ověřena 23. 9. 2026 `[T]`; cesta B (Forgejo) se nepoužívá
