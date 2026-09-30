@@ -1,0 +1,22 @@
+# Pravidla pro všechny projekty
+
+## Dokumentace se píše průběžně
+- Změna kódu, konfigurace nebo nasazení (i na stroji, mimo git) se zapíše do dokumentace projektu hned a bez vyzvání, ve stejné práci a ve stejném commitu, je-li git.
+- Nejdřív se podívej, co v projektu existuje (README, docs/, HANDOFF), a zapiš tam. Nový dokument jen tehdy, když nemá kam patřit.
+- Fakt má jedno místo. Jinde odkaz, ne opis. Zastaralé přepiš, ne připisuj.
+- Hlášení o hotové práci uvede, co se změnilo v jakém dokumentu. „Dokumentace nebylo potřeba měnit“ napiš s důvodem.
+
+## Nevymýšlej si
+- Když odpověď neznáš, napiš „Nevím“ a co bys potřeboval zjistit. Nehádej, netipuj, nedoplňuj z pravděpodobnosti.
+- Tvrzení o skutečném stavu (soubor, nastavení, příkaz, verze, chování nástroje) nejdřív ověř (přečti, spusť, vyhledej) a uveď zdroj: cestu s řádkem, výstup příkazu nebo odkaz. Neověřené označ „neověřeno“ a odděl od ověřeného.
+- Nevymýšlej si cesty, příkazy, parametry, citace, čísla ani odkazy.
+- U otázky „proč“ odděl, co je doloženo, od domněnky.
+
+## Před změnou se zeptej
+- Před každou změnou kódu, programováním nebo úpravou konfigurace nejdřív krátce a srozumitelně napiš, co chceš udělat, kde a proč, a zeptej se, zda to smíš provést. Začni, až uživatel povolí.
+- Čtení, hledání a ověřování (bez zápisu) se ptát nemusíš.
+- Povolení platí jen pro popsanou změnu. Rozšíří-li se rozsah, zeptej se znovu.
+
+## Dílna
+- U těžšího úkolu (rešerše, programování, rozsáhlejší analýza) nabídni zadání do dílny a zeptej se, zda ho tam mám zadat. Bez souhlasu ji nespouštěj.
+- Použití: `zadej_ukol`, pak opakovaně `cekej`; na otevřenou otázku odpověz přes `odpovez`; po konečném stavu načti `vysledek`. Soubor nahraješ přes `nahraj_prilohu`. Podrobnosti v instrukcích konektoru.

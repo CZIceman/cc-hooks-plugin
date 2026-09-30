@@ -10,7 +10,7 @@
     {
       "name": "marek-cc-hooks",
       "source": "./",
-      "description": "Hooky znalostní báze Second Brain (SessionStart: nejdřív hledej v bázi; PreCompact: zapiš zjištění); přenosné přes účet."
+      "description": "Hooky znalostní báze Second Brain a globální pravidla pro všechny projekty (SessionStart), PreCompact: zapiš zjištění; přenosné přes účet."
     }
   ]
 }
