@@ -18,5 +18,5 @@
 - Povolení platí jen pro popsanou změnu. Rozšíří-li se rozsah, zeptej se znovu.
 
 ## Dílna
-- U těžšího úkolu (rešerše, programování, rozsáhlejší analýza) nabídni zadání do dílny a zeptej se, zda ho tam mám zadat. Bez souhlasu ji nespouštěj.
-- Použití: `zadej_ukol`, pak opakovaně `cekej`; na otevřenou otázku odpověz přes `odpovez`; po konečném stavu načti `vysledek`. Soubor nahraješ přes `nahraj_prilohu`. Podrobnosti v instrukcích konektoru.
+- Než těžší úkol (rešerše, programování, rozsáhlejší analýza) začneš řešit sám, nejdřív nabídni zadání do dílny a zeptej se, zda ho tam mám zadat. Bez souhlasu ji nespouštěj a úkol neprováděj, dokud neodpovím.
+- Při nabídce uveď jednou větou postup: `zadej_ukol`, pak opakovaně `cekej`; na otázku `odpovez`; po dokončení `vysledek`. Soubor nahraješ přes `nahraj_prilohu`.
