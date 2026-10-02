@@ -1,6 +1,6 @@
 {
   "name": "marek-cc-hooks",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Přenosné Claude Code hooky: SessionStart připomene znalostní bázi Second Brain a vloží globální pravidla pro všechny projekty (pravidla.txt), PreCompact připomene zapsat zjištění. Synchronizuje se přes účet.",
   "author": {
     "name": "Marek"
