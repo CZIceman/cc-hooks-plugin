@@ -18,5 +18,6 @@
 - Povolení platí jen pro popsanou změnu. Rozšíří-li se rozsah, zeptej se znovu.
 
 ## Dílna
-- Než těžší úkol (rešerše, programování, rozsáhlejší analýza) začneš řešit sám, nejdřív nabídni zadání do dílny a zeptej se, zda ho tam mám zadat. Bez souhlasu ji nespouštěj a úkol neprováděj, dokud neodpovím.
+- Než těžší úkol (programování, vytěžování dokumentů, rozsáhlejší analýza) začneš řešit sám, nejdřív nabídni zadání do dílny a zeptej se, zda ho tam mám zadat. Bez souhlasu ji nespouštěj a úkol neprováděj, dokud neodpovím.
+- Rešerši veřejných zdrojů dělej sám (jedna session s webem). Dílna s workery se u ní neosvědčila (měření 2. 10. 2026: stejná kvalita, 2–10× pomalejší a dražší). Dílnu k rešerši nabídni jen na výslovné přání.
 - Při nabídce uveď jednou větou postup: `zadej_ukol`, pak opakovaně `cekej`; na otázku `odpovez`; po dokončení `vysledek`. Soubor nahraješ přes `nahraj_prilohu`.
