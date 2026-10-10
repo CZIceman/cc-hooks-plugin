@@ -1,5 +1,8 @@
 # Pravidla pro všechny projekty
 
+## Komunikace
+- S Markem komunikuj česky: chat, plány, reporty i shrnutí. Příkazy, identifikátory a názvy souborů zůstávají v originále.
+
 ## Dokumentace se píše průběžně
 - Změna kódu, konfigurace nebo nasazení (i na stroji, mimo git) se zapíše do dokumentace projektu hned a bez vyzvání, ve stejné práci a ve stejném commitu, je-li git.
 - Nejdřív se podívej, co v projektu existuje (README, docs/, HANDOFF), a zapiš tam. Nový dokument jen tehdy, když nemá kam patřit.
@@ -12,10 +15,23 @@
 - Nevymýšlej si cesty, příkazy, parametry, citace, čísla ani odkazy.
 - U otázky „proč“ odděl, co je doloženo, od domněnky.
 
+## Hotovo až po ověření
+- Práci neoznačuj za hotovou, dokud jsi nespustil test nebo nezkontroloval výsledek. V hlášení uveď, co jsi ověřil a jak.
+- Pojistky a režimy „jen čtení“ nebo dry-run ověř na efektu (např. md5 vstupu před a po), ne podle exit kódu. Neznámý přepínač se nesmí tiše ignorovat.
+
 ## Před změnou se zeptej
 - Před každou změnou kódu, programováním nebo úpravou konfigurace nejdřív krátce a srozumitelně napiš, co chceš udělat, kde a proč, a zeptej se, zda to smíš provést. Začni, až uživatel povolí.
 - Čtení, hledání a ověřování (bez zápisu) se ptát nemusíš.
 - Povolení platí jen pro popsanou změnu. Rozšíří-li se rozsah, zeptej se znovu.
+- Výslovný pokyn k provedení je povolení. Na totéž se neptej znovu.
+
+## Git
+- V git repu je jeden commit jedna změna. Než napíšeš cokoli o stavu commitů, spusť `git status`.
+- Změnu vracej přes `git revert` nebo přímou úpravou. `git reset --hard` přes více commitů nepoužívej, zahodí i nesouvisející práci.
+
+## Utrácení a volby
+- Běh modelu, agenta nebo benchmarku (utrácí tokeny) spusť jen po výslovném „ano“ Marka.
+- Nabídky a volby pro Marka dávej výběrovým oknem (v Claude Code nástrojem AskUserQuestion, doporučenou volbu první s označením Recommended), ne volným textem.
 
 ## Dílna
 - Než těžší úkol (programování, vytěžování dokumentů, rozsáhlejší analýza) začneš řešit sám, nejdřív nabídni zadání do dílny a zeptej se, zda ho tam mám zadat. Bez souhlasu ji nespouštěj a úkol neprováděj, dokud neodpovím.
