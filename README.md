@@ -15,7 +15,7 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | Hook | Událost | Co dělá |
 |---|---|---|
 | `baze-start.sh` | `SessionStart` | připomene bázi: než se začne cokoli řešit, nejdřív `pravidla` a `hledej` (levné, možná jsme to už řešili nebo víme, co nefunguje); vše důležité včetně slepých uliček zapisovat hned |
-| `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, před změnou se zeptej, git, utrácení a volby, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
+| `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, před změnou se zeptej, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
 | `baze-precompact.sh` | `PreCompact` | těsně před zhuštěním kontextu připomene zapsat do báze, co z této session ještě v bázi není. Neblokuje |
 
 Všechny tři jen vypíšou text (stdout jde do kontextu), vždy `exit 0`.

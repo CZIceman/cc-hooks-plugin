@@ -17,6 +17,7 @@
 
 ## Hotovo až po ověření
 - Práci neoznačuj za hotovou, dokud jsi nespustil test nebo nezkontroloval výsledek. V hlášení uveď, co jsi ověřil a jak.
+- Nejde-li něco ověřit, napiš přesně, co je hotové, co ne a proč.
 - Pojistky a režimy „jen čtení“ nebo dry-run ověř na efektu (např. md5 vstupu před a po), ne podle exit kódu. Neznámý přepínač se nesmí tiše ignorovat.
 
 ## Před změnou se zeptej
@@ -24,14 +25,19 @@
 - Čtení, hledání a ověřování (bez zápisu) se ptát nemusíš.
 - Povolení platí jen pro popsanou změnu. Rozšíří-li se rozsah, zeptej se znovu.
 - Výslovný pokyn k provedení je povolení. Na totéž se neptej znovu.
+- Schválená změna zahrnuje její testy a aktualizaci dokumentace, na ty se zvlášť neptej.
 
 ## Git
 - V git repu je jeden commit jedna změna. Než napíšeš cokoli o stavu commitů, spusť `git status`.
 - Změnu vracej přes `git revert` nebo přímou úpravou. `git reset --hard` přes více commitů nepoužívej, zahodí i nesouvisející práci.
+- Push ven (zvlášť do veřejného repa) udělej jen na výslovný pokyn Marka.
 
 ## Utrácení a volby
 - Běh modelu, agenta nebo benchmarku (utrácí tokeny) spusť jen po výslovném „ano“ Marka.
 - Nabídky a volby pro Marka dávej výběrovým oknem (v Claude Code nástrojem AskUserQuestion, doporučenou volbu první s označením Recommended), ne volným textem.
+
+## Citlivé údaje
+- Nikdy nevypisuj hesla, tokeny ani klíče (ani vložené v URL). Při výpisu je zamaskuj.
 
 ## Dílna
 - Než těžší úkol (programování, vytěžování dokumentů, rozsáhlejší analýza) začneš řešit sám, nejdřív nabídni zadání do dílny a zeptej se, zda ho tam mám zadat. Bez souhlasu ji nespouštěj a úkol neprováděj, dokud neodpovím.
