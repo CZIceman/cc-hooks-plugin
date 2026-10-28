@@ -1,7 +1,7 @@
 {
   "name": "marek-cc-hooks",
-  "version": "0.6.0",
-  "description": "Přenosné Claude Code hooky: SessionStart připomene znalostní bázi Second Brain a vloží globální pravidla (pravidla.txt), PreCompact připomene zapsat zjištění, PreToolUse vynucuje potvrzení rizikových akcí a běhů modelů a bránu báze, Stop upozorní na „hotovo“ bez ověření. Synchronizuje se přes účet.",
+  "version": "0.7.0",
+  "description": "Přenosné Claude Code hooky: SessionStart připomene znalostní bázi Second Brain a vloží globální pravidla (pravidla.txt; od 0.7.0 samostatná práce, ptát se jen na mazání a hesla/tokeny/klíče), PreCompact připomene zapsat zjištění, PreToolUse vynucuje potvrzení rizikových akcí, bránu báze a zamítá zbytečné otázky, Stop upozorní na „hotovo“ bez ověření a zablokuje zbytečnou otázku na konci tahu, UserPromptSubmit potvrdí příjem zprávy od jiného agenta. Synchronizuje se přes účet.",
   "author": {
     "name": "Marek"
   },
