@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""PreToolUse hook (návrh, marek-cc-hooks 0.6.0) — vynucení pravidel před akcí.
+"""PreToolUse hook (marek-cc-hooks 0.7.0) — vynucení pravidel před akcí, bez zbytečných dotazů.
 
-Princip: souhlas nehlídá model, ale okno oprávnění Claude Code. Rizikovou akci hook
-vrátí jako permissionDecision "ask" (Marek potvrdí), nic dalšího neschvaluje. Neznámé
-a neškodné akce propustí mlčky (normální tok oprávnění).
+Princip: souhlas nehlídá model, ale okno oprávnění Claude Code. Rizikovou akci hook vrátí jako
+permissionDecision "ask" (Marek potvrdí), nic dalšího neschvaluje. Neznámé a neškodné akce
+propustí mlčky (normální tok oprávnění).
 
-Třídy: (1) rizikový Bash, (2) rizikové cesty pro Edit/Write, (3) běhy modelů,
-(4) tajné soubory, (5) brána báze (pravidla před prací).
+Od 0.7.0 (rozhodnutí Marka 28. 10. 2026): agent se smí ptát jen na mazání/přepis dat a na
+hesla, tokeny a klíče. Push a běhy modelů/agentů (utrácení tokenů) se neptají.
+
+Třídy: (1) rizikový Bash, (2) rizikové cesty pro Edit/Write, (4) tajné soubory,
+(5) brána báze (pravidla před prací), (6) AskUserQuestion: zbytečná otázka se zamítne
+(agent má rozhodnout sám). mv a sed -i uvnitř adresáře projektu (cwd) se neptají.
 Chyba skriptu = akce pokračuje (exit 0 bez výstupu); nikdy nesmí rozbít práci.
+Vypnutí větve (6): MAREK_ASK_MODE=off.
 """
-import json, os, re, shlex, sys, time
+import json, os, re, shlex, sys
 
 def out(decision, reason):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
@@ -29,6 +34,25 @@ sid = d.get("session_id", "x")
 scratch = d.get("scratchpad_dir") or ""
 home = os.path.expanduser("~")
 
+# Adresář projektu = cwd session; domovský adresář a "/" za projekt nepovažujeme.
+cwd = d.get("cwd") or ""
+proj = ""
+if cwd:
+    _rc = os.path.realpath(cwd)
+    if _rc not in ("/", os.path.realpath(home)):
+        proj = _rc
+
+def under(p, base):
+    p = os.path.realpath(os.path.expanduser(p))
+    return bool(base) and (p == base or p.startswith(base.rstrip("/") + "/"))
+
+def inside_work(w):
+    """Cesta leží ve scratchpadu nebo v adresáři projektu (relativní cesty se berou od cwd)."""
+    p = os.path.expanduser(w)
+    if not os.path.isabs(p) and cwd:
+        p = os.path.join(cwd, p)
+    return under(p, scratch) or under(p, proj)
+
 # ---------- (5) brána báze: nejdřív `pravidla` (jednou za session) ----------
 # Subagenti se nehlídají. Po 2 zamítnutích brána povolí (konektor nemusí být dostupný).
 if not d.get("agent_id"):
@@ -46,13 +70,33 @@ if not d.get("agent_id"):
                 out("deny", "Pravidlo báze: než začneš cokoli řešit, zavolej `pravidla` (a `hledej`). "
                     "Nástroje načti přes ToolSearch (dotaz „Second Brain“).")
 
-# ---------- (3) běhy modelů ----------
-if tool in ("Agent", "Workflow") or tool.endswith("D_lna__zadej_ukol"):
-    out("ask", "Běh modelu utrácí tokeny: jen po výslovném „ano“ Marka.")
+# ---------- (6) AskUserQuestion: ptát se jen na mazání a hesla/tokeny/klíče ----------
+# Propustí se i otázky dílny (nabídka dílny a volby FORMULAR zůstaly v pravidlech beze změny).
+# Heuristika podle textu otázky; nejistota = propustit (lepší otázka navíc než zablokovaný agent).
+ASK_OK = re.compile(r"smaz|vymaz|odstra|delet|\brm\b|\bdrop\b|wipe|přeps|nevratn|irrevers|"
+                    r"hesl|token|kl[ií]č|password|secret|credential|api[ -]?key|tajn|"
+                    r"d[ií]ln|formul[aá]ř|zadej_ukol", re.I)
 
-def under(p, base):
-    p = os.path.realpath(os.path.expanduser(p))
-    return bool(base) and (p == base or p.startswith(base.rstrip("/") + "/"))
+def recent_formular(path):
+    """Dílna: v posledních ~60 kB přepisu je nabídka FORMULAR (otázky se pak musí zobrazit)."""
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - 60000))
+            return "FORMULAR" in fh.read().decode("utf-8", "ignore")
+    except (OSError, TypeError):
+        return False
+
+if tool == "AskUserQuestion":
+    if os.environ.get("MAREK_ASK_MODE", "deny") == "off":
+        sys.exit(0)
+    txt = json.dumps(ti, ensure_ascii=False)
+    if ASK_OK.search(txt) or recent_formular(d.get("transcript_path")):
+        sys.exit(0)
+    out("deny", "Neptej se: rozhodni sám podle nejrozumnějšího předpokladu, předpoklad uveď v hlášení "
+        "a pokračuj. Ptát se smíš jen na mazání nebo přepis dat, na hesla, tokeny a klíče (a u dílny). "
+        "Otázky k zadání patří řídící session, ne uživateli.")
 
 # ---------- (2) Edit/Write na rizikových cestách ----------
 RISKY_PATHS = [r"^/(etc|usr|boot|var|opt|root)(/|$)", r"/\.ssh(/|$)", r"/\.gnupg(/|$)",
@@ -92,16 +136,13 @@ for rx in SECRET:
     if hit:
         out("ask", "Příkaz sahá na tajné soubory (historie, klíče, tokeny). Nikdy nevypisovat hesla/tokeny.")
 
-# ---------- (3b) běhy modelů přes CLI ----------
-if re.search(r"(^|[;&|\s])(claude|codex|agy|gemini)\b[^;&|]*\s(-p|--print|--prompt|exec)\b", cmd):
-    out("ask", "Běh modelu přes CLI utrácí tokeny: jen po výslovném „ano“ Marka.")
-
 # ---------- (1) rizikový Bash ----------
+# Běhy modelů (claude/codex -p, Agent, zadej_ukol) a samotný git push se od 0.7.0 neptají.
 RISKY_CMDS = [
     (r"\bsudo\b", "sudo vždy jen od Marka"),
     (r"\b(dnf|yum|rpm|flatpak|snap|pip3?|pipx)\b[^;&|]*\b(install|remove|erase|autoremove|upgrade|update|swap|reinstall)\b", "instalace/odebrání balíčků"),
     (r"\bsystemctl\b[^;&|]*\b(enable|disable|start|stop|restart|mask|unmask|daemon-reload|edit|set-default|isolate|reload)\b", "změna služeb"),
-    (r"\bgit\s+push\b|\bgit\s+reset\s+--hard\b|\bgit\s+clean\b[^;&|]*-[a-z]*f|\bgit\s+branch\s+-D\b|--force\b", "git: push a destruktivní operace jen na výslovný pokyn"),
+    (r"\bgit\s+reset\s+--hard\b|\bgit\s+clean\b[^;&|]*-[a-z]*f|\bgit\s+branch\s+-D\b|--force\b", "git: destruktivní operace (reset --hard, clean -f, branch -D, --force)"),
     (r"\b(setpci|modprobe|rmmod|insmod|grub2?-\w+|dracut|kernel-install|mokutil|sbctl|efibootmgr|tuned-adm|hostnamectl|timedatectl|localectl|nmcli|firewall-cmd|nft|iptables|ufw|sysctl|authselect|dconf|gsettings|xdg-user-dirs-update|fwupdmgr|crontab|visudo)\b", "změna konfigurace systému"),
     (r"\b(chmod|chown|chattr|setfacl|usermod|userdel|useradd|passwd)\b", "změna práv/uživatelů"),
     (r"\b(mkfs\w*|wipefs|dd|parted|fdisk|mount|umount|cryptsetup|lvm|vgremove|lvremove)\b", "disky a svazky"),
@@ -111,14 +152,26 @@ for rx, why in RISKY_CMDS:
     if re.search(rx, cmd):
         out("ask", f"Rizikový příkaz ({why}). Nejdřív říct co, kde a proč, a zeptat se.")
 
-# rm/mv/cp/sed -i/truncate: bez dotazu jen když všechny cesty leží ve scratchpadu
-if re.search(r"\b(rm|rmdir|shred|truncate|mv|sed\s+-i\S*|perl\s+-\S*i\S*)\b", cmd):
+def split_words(c):
     try:
-        words = shlex.split(cmd.replace(";", " ; ").replace("&&", " && ").replace("|", " | "))
+        return shlex.split(c.replace(";", " ; ").replace("&&", " && ").replace("|", " | "))
     except ValueError:
-        words = cmd.split()
+        return c.split()
+
+# rm/rmdir/shred/truncate = mazání: bez dotazu jen když všechny cesty leží ve scratchpadu
+if re.search(r"\b(rm|rmdir|shred|truncate)\b", cmd):
+    words = split_words(cmd)
     paths = [w for w in words if w.startswith(("/", "~", ".")) and not w.startswith("-")]
     if not (scratch and paths and all(under(w, scratch) for w in paths)):
-        out("ask", "Mazání, přesun nebo úprava souborů mimo scratchpad. Nejdřív říct co, kde a proč, a zeptat se.")
+        out("ask", "Mazání souborů mimo scratchpad. Nejdřív říct co, kde a proč, a zeptat se.")
+
+# mv, sed -i, perl -i: bez dotazu ve scratchpadu a v adresáři projektu (cwd); mimo ně se ptá.
+# Holé názvy souborů (bez lomítka) se berou od cwd, proto je pouštíme jen když cwd je projekt.
+if re.search(r"\b(mv|sed\s+-i\S*|perl\s+-\S*i\S*)\b", cmd):
+    words = split_words(cmd)
+    cand = [w for w in words if not w.startswith("-") and ("/" in w or w.startswith(("~", ".")))]
+    ok = all(inside_work(w) for w in cand) and (bool(cand) or bool(proj))
+    if not ok:
+        out("ask", "Přesun nebo úprava souborů mimo scratchpad a projekt. Nejdřív říct co, kde a proč, a zeptat se.")
 
 sys.exit(0)
