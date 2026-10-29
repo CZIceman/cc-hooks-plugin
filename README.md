@@ -17,8 +17,8 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | `baze-start.sh` | `SessionStart` | připomene bázi: než se začne cokoli řešit, nejdřív `pravidla` a `hledej` (levné, možná jsme to už řešili nebo víme, co nefunguje); vše důležité včetně slepých uliček zapisovat hned |
 | `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, samostatná práce bez zbytečných dotazů, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
 | `baze-precompact.sh` | `PreCompact` | těsně před zhuštěním kontextu připomene zapsat do báze, co z této session ještě v bázi není. Neblokuje |
-| `pretool-guard.py` | `PreToolUse` | **vynucuje pravidla před akcí** (od 0.6.0): rizikové akce vrací jako `ask` (okno oprávnění), tajné soubory a bránu báze; od 0.7.0 bez dotazů na push a běhy modelů a se zamítnutím zbytečného `AskUserQuestion` (viz níže) |
-| `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na změnu bez zápisu do báze nebo dokumentu (`MAREK_STOP_MODE=block` by blokoval); od 0.7.0 jednou zablokuje tah končící zbytečnou otázkou na uživatele |
+| `pretool-guard.py` | `PreToolUse` | **okno oprávnění (`ask`) jen na mazání a přepis dat, čtení tajemství a změnu nastavení Claude** (od 0.8.0, viz níže) a brána báze |
+| `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na změnu bez zápisu do báze nebo dokumentu (`MAREK_STOP_MODE=block` by blokoval) |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
 
 Tři původní hooky jen vypíšou text (stdout jde do kontextu), vždy `exit 0`. Hooky od 0.6.0 text vkládají jen jako důvod rozhodnutí nebo kontext; při chybě skriptu akce pokračuje (`exit 0` bez výstupu).
@@ -50,44 +50,62 @@ Plugin synchronizovaný přes účet se načítá online. Na stroji bez konektiv
 se nově nenačte; už stažený zůstává. Naše stroje jsou online, ale je to důvod
 nespoléhat na hook jako na jedinou pojistku.
 
-## Vynucení (od 0.6.0, upraveno 0.7.0)
+## Vynucení (od 0.6.0, přepracováno 0.8.0)
 
 Souhlas nehlídá model ani text: hook nezjistí, že uživatel řekl „ano“. Rizikovou akci proto vrací jako
 `permissionDecision: "ask"` a souhlasem je okno oprávnění Claude Code. `ask` platí i proti pravidlu `allow`
 a ve všech režimech oprávnění (default, acceptEdits, auto, dontAsk, bypassPermissions); ověřeno 16. 10. 2026
-v Claude Code 2.1.300 přes `claude -p`, v interaktivním režimu okno neověřeno.
+v Claude Code 2.1.300 přes `claude -p`. V režimu `auto` jsou okna z tohoto hooku prakticky jediná okna, která
+uživatel vidí (měření 29. 10. 2026: 83 z 83 oken na notebooku za 15.–29. 10., 89 z 91 na pve 28. 10.).
 
-### Od 0.7.0: samostatná práce (rozhodnutí Marka, 28. 10. 2026)
+### Od 0.8.0: okno jen tam, kde jde o data (rozhodnutí Marka, 29. 10. 2026)
 
-Agenti se ptali zbytečně. Příčinou byl hlavně text `pravidla.txt` („před každou změnou se zeptej“, push jen na pokyn,
-běh modelu jen po „ano“), ne samotné okno oprávnění. Nově se agent smí ptát jen na **mazání nebo přepis dat** a na
-**hesla, tokeny a klíče**; nabídka dílny a volby `FORMULAR` zůstaly beze změny. Otázky k zadání patří řídící session
-(pravidla báze, bod 0), ne uživateli.
+0.6.0 a 0.7.0 hledaly rizikové slovo v celém textu příkazu, takže okno vyvolalo i `sudo -n true`, `mount | grep`,
+`echo '== sudo pam'`, `chmod` uvnitř heredocu, `ssh -i ~/.ssh/klic` nebo `rm` ve složce projektu. Ze 83 oken na notebooku
+by jich 0.7.0 vrátila 74. 0.8.0 jich ze stejných příkazů vrátí 3, a to skutečné mazání na NAS. Ze všech 912 volání Bash/Edit/Write
+za stejné období jich vrátí 12 (mazání a přepis souborů na NAS, zápis do `tajne.txt`, čtení tajných souborů).
 
-`pretool-guard.py` (PreToolUse) vrací:
-- `ask` pro `sudo`, instalaci a odebrání balíčků, změny služeb, destruktivní git (`reset --hard`, `clean -f`, `branch -D`,
-  `--force`), změny konfigurace systému, práva a disky, zápisy do `/etc`, `/usr`, `~/.bashrc*`, `~/.claude/settings*`
-  a podobně, `rm`/`rmdir`/`shred`/`truncate` mimo scratchpad;
-- `ask` pro příkazy sahající na tajné soubory (`.bash_history`, `~/.ssh`, `.env` a podobně);
-- **bez dotazu** (od 0.7.0): `git push`, běhy modelů (`Agent`, `Workflow`, `zadej_ukol`, `claude`/`codex`/`agy` s `-p`/`exec`),
-  `mv` a `sed -i`/`perl -i` ve scratchpadu a v adresáři projektu. Projekt = `cwd` session; domovský adresář a `/`
-  se za projekt nepovažují. Cesta ven z projektu (`../`, `~/.bashrc`, `/srv/…`) se ptá dál;
-- `deny` pro `AskUserQuestion` bez rizikového tématu: agent dostane důvod „rozhodni sám a pokračuj“. Projdou otázky
-  s mazáním/přepisem, hesly, tokeny, klíči, dílnou, a vše, co následuje po nabídce `FORMULAR` v přepisu. Je to heuristika
-  podle textu otázky; nejistota = propustit. Vypnutí: `MAREK_ASK_MODE=off`;
-- `deny` bránu báze: dokud session nezavolala `pravidla`, zamítne nástroje kromě `ToolSearch`, `AskUserQuestion`,
-  `ReadNotifications` a nástrojů báze; po 2 zamítnutích propustí (konektor nemusí být dostupný). Subagenty brána
-  nehlídá (větev `AskUserQuestion` je hlídá také). Stav je v `$XDG_RUNTIME_DIR/marek-hooks/<session_id>.baze`.
+`pretool-guard.py` posuzuje jen to, co shell spustí: příkaz rozloží na jednoduché příkazy (`;`, `&&`, `|`, nový řádek,
+`$( )`), těla heredoců přeskočí, řetězce zůstanou jedním slovem, rozbalí `sudo`, `timeout`, `env`, `xargs`, `bash -c '…'`,
+dosadí jednoduchá přiřazení (`S=…; rm $S/x`) a sleduje `cd`. Kód skriptů (`python3 -c`, heredoc) nehodnotí.
+
+Pracovní místa (mazat a přepisovat se tu smí bez dotazu): scratchpad, `/tmp`, `/var/tmp`, `/run/user/<uid>` (mimo `gvfs`),
+adresář projektu (`CLAUDE_PROJECT_DIR` i aktuální `cwd`; domovský adresář a `/` se za projekt nepovažují), `~/.cache`
+a paměť Claude (`~/.claude/projects/*/memory`). Data: domovský adresář, `/mnt`, `/media`, `/run/media`, `/srv`, gvfs.
+
+`ask` vrací jen pro:
+- **(a) mazání mimo pracovní místa:** `rm`, `rmdir`, `unlink`, `shred`, `truncate`, `find -delete`/`-exec rm`, `xargs rm`,
+  `rsync --delete`; neznámou cílovou cestu (nedosazená proměnná) bere jako mimo. **Přepis existujícího souboru v datech**
+  mimo pracovní místa: `>`, `tee` (bez `-a`), cíl `mv`/`cp`/`install`, `sed -i`/`perl -i`. Destruktivní git (`reset --hard`,
+  `clean -f`, `branch -D`, `push --force`, `checkout --`, `restore`, `stash drop|clear`; mimo scratchpad a `/tmp`) a operace
+  ničící disky (`mkfs`, `wipefs`, `parted`, `fdisk`, `dd of=/dev/…`, `cryptsetup luksFormat|erase`, `lvremove`…);
+- **(b) čtení obsahu tajných souborů** (`.bash_history`, soukromé klíče v `~/.ssh`, `.gnupg`, `.netrc`, `.env` a vzory
+  z `~/.config/marek-hooks/tajne.txt`). Neptá se u příkazů, které soubor jen použijí nebo vypíšou jméno (`ssh -i`, `ls`,
+  `stat`, `chmod`, `git`…), ani u veřejných částí `~/.ssh` (`config`, `known_hosts`, `*.pub`, `authorized_keys`);
+- **(c) změnu nastavení a hooků Claude Code a klíčů:** zápis, úprava i mazání v `~/.claude/settings*.json`, `~/.claude/hooks`,
+  `~/.claude/plugins`, `~/.config/marek-hooks`, `/etc/claude-code`, `~/.ssh`, `~/.gnupg` (i přes Edit/Write).
+
+**Bez dotazu:** `sudo` a systémové změny (`dnf`, `systemctl`, zápis do `/etc`, `chmod`, `mount`), `git push`, běhy modelů
+a agentů, Edit/Write mimo nastavení Claude (Claude Code je umí vrátit přes checkpoint), `AskUserQuestion`.
+Příkazy uvnitř `ssh host '…'` a `pct exec N -- …` se hodnotí jako vzdálené: pracovní místa tam jsou jen `/tmp` a `/var/tmp`,
+přepis a tajemství se tam nehodnotí.
+
+Zahazování `AskUserQuestion` podle textu otázky a blok otázky na konci tahu (oboje 0.7.0) jsou zrušené: heuristika by
+zamítla 22 z 35 skutečných otázek, i schválení kopírování dat, které si Marek vyhradil. Kdy se ptát, určuje `pravidla.txt`.
+
+Brána báze: dokud session nezavolala `pravidla`, hook zamítne nástroje kromě `ToolSearch`, `AskUserQuestion`,
+`ReadNotifications` a nástrojů báze; po 2 zamítnutích propustí (konektor nemusí být dostupný). Subagenty nehlídá.
+Stav je v `$XDG_RUNTIME_DIR/marek-hooks/<session_id>.baze`.
 
 Tajné cesty specifické pro stroj (např. soubory s tokeny) **nejsou v repu** (repo je veřejné). Jsou v lokálním souboru
 `~/.config/marek-hooks/tajne.txt`: jeden regulární výraz na řádek, `#` komentář. Chybí-li soubor, platí jen obecné vzory.
 
-`stop-guard.py` (Stop):
-- upozornění „hotovo bez ověření“ a „změna bez dokumentace“ jdou jako `additionalContext`;
-- **od 0.7.0** tah, který končí otázkou na uživatele (a nepoužil okno `AskUserQuestion` ani se neptá na mazání,
-  hesla/tokeny/klíče, dílnu), se jednou zablokuje s důvodem „rozhodni sám a pokračuj“. Vypnutí: `MAREK_STOP_QUESTIONS=off`;
-- druhé volání v téže odpovědi (`stop_hook_active`) mlčí, takže se nezacyklí. Potřebuje přepis session
-  (`--no-session-persistence` ho nevytvoří).
+`stop-guard.py` (Stop): upozornění „hotovo bez ověření“ a „změna bez dokumentace“ jdou jako `additionalContext`;
+druhé volání v téže odpovědi (`stop_hook_active`) mlčí. Potřebuje přepis session (`--no-session-persistence` ho nevytvoří).
+
+**Nová verze platí až v nové session.** Běžící session drží verzi pluginu, se kterou startovala
+(`…/synced/<bucket>/marek-cc-hooks~gN/.in_use/<PID>`); ověřeno 29. 10. 2026: dvě session z 26. 10. a 29. 10. 13:38 běžely
+s 0.6.0, ačkoli 0.7.0 už byla stažená.
 
 ### Potvrzování zpráv od jiných agentů (od 0.7.0)
 
@@ -116,5 +134,5 @@ Test odeslání: `MAREK_TEST_NET=1 python3 tests/test-ack.py` (náhodný testova
 
 Testy bez modelu: `python3 tests/test-hooks.py`, `python3 tests/test-stop.py`, `python3 tests/test-ack.py`.
 
-Vrácení: obnovit verzi 0.6.0 (commit `e9f00ca`, dotazy jako dřív) nebo 0.5.1 (commit `af41bd2`) a marketplace.
+Vrácení: obnovit verzi 0.7.0 (commit `f1d458b`), 0.6.0 (commit `e9f00ca`, dotazy jako dřív) nebo 0.5.1 (commit `af41bd2`) a marketplace.
 Nouzově odeber `PreToolUse`, `Stop` a `UserPromptSubmit` z `hooks/hooks.json`.
