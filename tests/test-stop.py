@@ -32,17 +32,16 @@ print("OK  " if ok else "CHYBA", f"{'stop_hook_active mlčí':28} -> {dec}")
 r = subprocess.run([sys.executable, os.path.join(D, "stop-guard.py")], input="{špatně", capture_output=True, text=True)
 ok = r.returncode == 0 and not r.stdout; bad += not ok
 print("OK  " if ok else "CHYBA", "rozbitý vstup = nic, rc", r.returncode)
-# kontrola (c): tah nesmí končit zbytečnou otázkou na uživatele
+# od 0.8.0 otázka na konci tahu neblokuje (kdy se ptát, určují pravidla)
 Q = lambda fin, *extra: [U("x"), A(*extra, TXT(fin))]
 qcases = [
- ("otázka na konci -> block", Q("Hotovo je návrh. Mám pokračovat?"), "Hotovo je návrh. Mám pokračovat?", {}, "block"),
- ("otázka v markdownu -> block", Q("Použít A?"), "Použít A, nebo B? **Mám pokračovat?**", {}, "block"),
+ ("otázka na konci neblokuje", Q("Návrh je připraven. Mám pokračovat?"), "Návrh je připraven. Mám pokračovat?", {}, "-"),
+ ("otázka v markdownu neblokuje", Q("Použít A?"), "Použít A, nebo B? **Mám pokračovat?**", {}, "-"),
  ("otázka uprostřed, konec bez ? ", Q("x"), "Měl jsem se zeptat, jestli A? Rozhodl jsem sám a použil A.", {}, "-"),
  ("otázka + AskUserQuestion v tahu", Q("x", TU("AskUserQuestion", {})), "Který model?", {}, "-"),
  ("otázka na mazání projde", Q("x"), "Smazat starou zálohu?", {}, "-"),
  ("otázka na heslo projde", Q("x"), "Vložit heslo do konfigurace?", {}, "-"),
  ("otázka u dílny projde", Q("x"), "Zadat úkol do dílny?", {}, "-"),
- ("MAREK_STOP_QUESTIONS=off", Q("x"), "Mám pokračovat?", {"env": {"MAREK_STOP_QUESTIONS": "off"}}, "-"),
  ("stop_hook_active + otázka mlčí", Q("x"), "Mám pokračovat?", {"stop_hook_active": True}, "-"),
 ]
 for n, items, fin, kw, exp in qcases:

@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
-"""Stop hook (marek-cc-hooks 0.7.0).
+"""Stop hook (marek-cc-hooks 0.8.0).
 
 Kontroluje poslední tah (od posledního textu uživatele):
  (a) odpověď tvrdí „hotovo/funguje/ověřeno…“, ale v tahu neproběhl žádný Bash ani test    [upozornění],
  (b) tah měnil soubory nebo konfiguraci, ale nezapsal do báze (`zapis`) ani neupravil
      dokument (*.md, README, HANDOFF, docs/)                                              [upozornění],
- (c) od 0.7.0: tah končí otázkou na uživatele, i když se agent ptát nesmí (smí jen na mazání
-     nebo přepis dat a na hesla, tokeny a klíče, a u dílny)                                [BLOKUJE jednou:
-     agent má rozhodnout sám a pokračovat].
+ Blok otázky na konci tahu (0.7.0) je od 0.8.0 zrušený: kdy se ptát, určují pravidla (pravidla.txt).
 Upozornění (a), (b): MAREK_STOP_MODE=advisory|block, výchozí advisory.
-Kontrola (c):        MAREK_STOP_QUESTIONS=block|off, výchozí block.
-Ochrana proti smyčce: stop_hook_active -> mlčí (blok (c) se tedy opakuje nejvýš jednou).
+Ochrana proti smyčce: stop_hook_active -> mlčí.
 Chyba skriptu = exit 0 bez výstupu.
 """
 import json, os, re, sys
 
 MODE = os.environ.get("MAREK_STOP_MODE", "advisory")          # advisory | block
-QMODE = os.environ.get("MAREK_STOP_QUESTIONS", "block")       # block | off
 
 try:
     d = json.load(sys.stdin)
@@ -69,18 +65,6 @@ def doc_write(b):
     return "Second_Brain__zapis" in b.get("name", "") or (
         b.get("name") in ("Edit", "Write") and re.search(r"\.md$|README|HANDOFF|/docs?/", i.get("file_path", "")))
 
-# (c) zbytečná otázka na konci tahu. Témata, na která se ptát smí, odpovídají pretool-guard.py (ASK_OK);
-# při změně seznamu upravit na obou místech.
-ASK_OK = re.compile(r"smaz|vymaz|odstra|delet|\brm\b|\bdrop\b|wipe|přeps|nevratn|irrevers|"
-                    r"hesl|token|kl[ií]č|password|secret|credential|api[ -]?key|tajn|"
-                    r"d[ií]ln|formul[aá]ř|zadej_ukol", re.I)
-def ends_with_question(t):
-    t = re.sub(r"[\s*_`\"'»”)\]]+$", "", (t or "").strip())  # koncový markdown a uvozovky
-    return t.endswith("?")
-asked_via_window = any(b.get("name") == "AskUserQuestion" for b in tools)
-question_problem = (QMODE != "off" and ends_with_question(final)
-                    and not asked_via_window and not ASK_OK.search(final))
-
 problems = []
 if re.search(r"\b(hotovo|dokončen[oa]|funguje|opraven[oa]|vyřešen[oa]|ověřen[oa]|nasazen[oa])\b", final, re.I) \
         and not any(is_bash(b) or "mcp__" in b.get("name", "") for b in tools):
@@ -89,13 +73,6 @@ if re.search(r"\b(hotovo|dokončen[oa]|funguje|opraven[oa]|vyřešen[oa]|ověře
 if any(mutating(b) for b in tools) and not any(doc_write(b) for b in tools):
     problems.append("Tah měnil soubory nebo konfiguraci a nezapsal do báze ani do dokumentace. "
                     "Pravidlo: dokumentace se píše hned (báze `zapis`, README/HANDOFF) — nebo napiš proč není potřeba.")
-
-if question_problem:
-    msg = ("Neptej se uživatele: rozhodni sám podle nejrozumnějšího předpokladu, předpoklad uveď v hlášení "
-           "a pokračuj v práci. Ptát se smíš jen na mazání nebo přepis dat a na hesla, tokeny a klíče. "
-           "Jsi-li hotov, napiš hlášení bez otázky. " + " ".join(problems))
-    print(json.dumps({"decision": "block", "reason": msg.strip()}, ensure_ascii=False))
-    sys.exit(0)
 
 if not problems:
     sys.exit(0)
