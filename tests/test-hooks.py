@@ -4,6 +4,7 @@ import json, os, subprocess, sys, tempfile
 D = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks")
 SCR = "/tmp/claude-1000/x/scratchpad"
 os.environ["XDG_RUNTIME_DIR"] = tempfile.mkdtemp()
+os.environ.pop("CLAUDE_PROJECT_DIR", None)  # projekt určuje jen cwd v testu
 def run(script, inp):
     r = subprocess.run([sys.executable, os.path.join(D, script)], input=json.dumps(inp), capture_output=True, text=True)
     o = r.stdout.strip()
@@ -12,73 +13,93 @@ def run(script, inp):
 def pre(tool, ti, sid="s1", **kw): return run("pretool-guard.py", {"tool_name": tool, "tool_input": ti, "session_id": sid, "scratchpad_dir": SCR, **kw})
 # báze si odemknu nejdřív (jinak by brána zamítla vše)
 pre("mcp__claude_ai_Marek_Second_Brain__pravidla", {}, sid="s1")
+H = os.path.expanduser("~")
+PRJ = "/home/marek/claude/styblo"
 T = [  # (popis, výsledek, očekávané)
+ # čtení a běžná práce
  ("ls", pre("Bash", {"command": "ls -la ~"}), "-"),
  ("grep journal", pre("Bash", {"command": "journalctl -b | grep -i error"}), "-"),
  ("git status", pre("Bash", {"command": "git status --short"}), "-"),
- ("git push (od 0.7.0 bez dotazu)", pre("Bash", {"command": "git push origin master"}), "-"),
- ("git push --force", pre("Bash", {"command": "git push --force origin master"}), "ask"),
- ("git reset --hard", pre("Bash", {"command": "git reset --hard HEAD~3"}), "ask"),
- ("git commit (nechat)", pre("Bash", {"command": "git commit -m x"}), "-"),
- ("sudo dnf", pre("Bash", {"command": "sudo dnf install -y htop"}), "ask"),
- ("dnf bez sudo", pre("Bash", {"command": "dnf remove acpica-tools"}), "ask"),
- ("dnf list (čtení)", pre("Bash", {"command": "dnf list installed | grep ripgrep"}), "-"),
- ("systemctl status", pre("Bash", {"command": "systemctl status sshd"}), "-"),
- ("systemctl disable", pre("Bash", {"command": "systemctl disable --now cups"}), "ask"),
- ("setpci", pre("Bash", {"command": "setpci -s 33:00.5 CAP_MSI+2.w"}), "ask"),
- ("rm mimo scratchpad", pre("Bash", {"command": "rm -rf ~/Hudba"}), "ask"),
+ ("git push", pre("Bash", {"command": "git push origin master"}), "-"),
+ ("git commit", pre("Bash", {"command": "git commit -m x"}), "-"),
+ ("claude -p", pre("Bash", {"command": "claude -p 'ahoj'"}), "-"),
+ ("Agent", pre("Agent", {"prompt": "x"}), "-"),
+ ("zadej_ukol", pre("mcp__claude_ai_D_lna__zadej_ukol", {}), "-"),
+ ("Read /etc/passwd", pre("Read", {"file_path": "/etc/passwd"}), "-"),
+ # systémové změny se od 0.8.0 neptají (rozhodnutí 29. 10. 2026)
+ ("sudo dnf install", pre("Bash", {"command": "sudo dnf install -y htop"}), "-"),
+ ("sudo dnf5 upgrade", pre("Bash", {"command": "sudo dnf5 upgrade -y 2>&1 | tail -25"}), "-"),
+ ("systemctl disable", pre("Bash", {"command": "systemctl disable --now cups"}), "-"),
+ ("sudo -n true", pre("Bash", {"command": "sudo -n true 2>&1 && echo SUDO_OK; id"}), "-"),
+ ("sudo smartctl (čtení)", pre("Bash", {"command": "sudo smartctl -H -A /dev/nvme0 2>/dev/null | grep -Ei overall"}), "-"),
+ ("sudo grubby", pre("Bash", {"command": "sudo grubby --default-kernel"}), "-"),
+ ("sudo tee /etc", pre("Bash", {"command": "echo x | sudo tee /etc/foo.conf"}), "-"),
+ ("echo > /etc", pre("Bash", {"command": "echo x > /etc/foo.conf"}), "-"),
+ ("setpci", pre("Bash", {"command": "setpci -s 33:00.5 CAP_MSI+2.w"}), "-"),
+ ("chmod 600 klíč", pre("Bash", {"command": "chmod 600 ~/.config/app/agent.key"}), "-"),
+ ("mount | grep", pre("Bash", {"command": "mount | grep /mnt/nas"}), "-"),
+ ("Edit /etc", pre("Edit", {"file_path": "/etc/dnf/dnf.conf"}), "-"),
+ ("Edit ~/.bashrc.d", pre("Write", {"file_path": H + "/.bashrc.d/x.sh"}), "-"),
+ ("Write /root/projekt (pve)", pre("Write", {"file_path": "/root/hevcpipe/hevcpipe/runner.py"}), "-"),
+ # slova v textu, který shell nespouští
+ ("echo se slovem sudo", pre("Bash", {"command": "echo '== sudo pam'; ls /etc/pam.d"}), "-"),
+ ("grep na chown", pre("Bash", {"command": "grep -n chown README.md"}), "-"),
+ ("heredoc s rm a dd", pre("Bash", {"command": "python3 - <<'EOF'\nimport os\nos.rmdir('/x')\nfor depth,dd in []: pass\nprint('rm -rf /')\nEOF\necho ok"}), "-"),
+ ("heredoc, pak skutečné rm", pre("Bash", {"command": "cat > x.sh <<'E'\nrm -rf /\nE\nrm -rf ~/Hudba"}), "ask"),
+ ("python3 -c s rm", pre("Bash", {"command": "python3 -c 'import os; print(\"rm -rf /\")'"}), "-"),
+ ("dd jako test rychlosti", pre("Bash", {"command": f"dd if=/dev/zero of={SCR}/t.bin bs=8M count=64"}), "-"),
+ # (a) mazání
+ ("rm mimo pracovní místa", pre("Bash", {"command": "rm -rf ~/Hudba"}), "ask"),
  ("rm ve scratchpadu", pre("Bash", {"command": f"rm -f {SCR}/a.txt"}), "-"),
+ ("rm přes proměnnou ve scratchpadu", pre("Bash", {"command": f"S={SCR}; D=$S/pkg; rm -rf $D; mkdir -p $D"}), "-"),
+ ("rm neznámá proměnná", pre("Bash", {"command": "rm -rf $NEZNAMA/x"}), "ask"),
+ ("rm v /tmp", pre("Bash", {"command": "rm -rf /tmp/x"}), "-"),
+ ("rm v projektu", pre("Bash", {"command": f"rm -f {PRJ}/a.txt"}, cwd=PRJ), "-"),
+ ("rm relativně v projektu", pre("Bash", {"command": "rm -f a.txt"}, cwd=PRJ), "-"),
+ ("cd do projektu a rm", pre("Bash", {"command": f"cd {PRJ}/sub && rm -rf dodavka"}, cwd=PRJ), "-"),
+ ("rm, cwd = HOME", pre("Bash", {"command": "rm a.txt"}, cwd=H), "ask"),
+ ("rm na NAS", pre("Bash", {"command": "rm -rf /mnt/nas/data/_Vymena/test"}), "ask"),
+ ("sudo rm /etc", pre("Bash", {"command": "sudo rm -f /etc/foo.conf"}), "ask"),
+ ("bash -c rm", pre("Bash", {"command": "bash -c 'rm -rf ~/Hudba'"}), "ask"),
+ ("find -delete mimo", pre("Bash", {"command": "find ~/Fotky -name '*.tmp' -delete"}), "ask"),
+ ("find -delete scratchpad", pre("Bash", {"command": f"find {SCR} -name '*.tmp' -delete"}), "-"),
+ ("xargs rm, cwd HOME", pre("Bash", {"command": "ls | xargs rm"}, cwd=H), "ask"),
+ ("rsync --delete mimo", pre("Bash", {"command": "rsync -a --delete src/ /mnt/nas/data/x/"}), "ask"),
+ ("git reset --hard", pre("Bash", {"command": "git reset --hard HEAD~3"}, cwd=PRJ), "ask"),
+ ("git push --force", pre("Bash", {"command": "git push --force origin master"}, cwd=PRJ), "ask"),
+ ("git reset --hard ve scratchpadu", pre("Bash", {"command": f"cd {SCR}/repo && git reset --hard"}), "-"),
+ ("mkfs", pre("Bash", {"command": "sudo mkfs.ext4 /dev/sdb1"}), "ask"),
+ ("dd na disk", pre("Bash", {"command": "sudo dd if=x.img of=/dev/sda bs=4M"}), "ask"),
+ # pve: příkazy v kontejneru
+ ("pct exec rm /var/tmp", pre("Bash", {"command": "pct exec 109 -- bash -c 'rm -f /var/tmp/avcheck/enc/*'"}), "-"),
+ ("pct exec systemctl", pre("Bash", {"command": "pct exec 109 -- bash -c 'systemctl stop hevcpipe-pilot; systemctl reset-failed hevcpipe-pilot'"}), "-"),
+ ("pct exec > /var/tmp log", pre("Bash", {"command": "pct exec 109 -- python3 /var/tmp/u.py > /var/tmp/u.log"}), "-"),
+ ("pct exec rm média", pre("Bash", {"command": "pct exec 109 -- bash -c 'rm -rf /media/nas/filmy/x'"}), "ask"),
+ ("ssh host rm", pre("Bash", {"command": "ssh root@nas 'rm -rf /srv/data/x'"}), "ask"),
+ ("ssh host čtení", pre("Bash", {"command": "ssh -i ~/.ssh/klic_ed25519 user@h 'hostname; df -h'"}), "-"),
+ # přepis existujících souborů v datech
  ("mv ve scratchpadu", pre("Bash", {"command": f"mv {SCR}/a {SCR}/b"}), "-"),
- ("sed -i mimo", pre("Bash", {"command": "sed -i s/a/b/ ~/.bashrc"}), "ask"),
- ("> /etc", pre("Bash", {"command": "echo x > /etc/foo.conf"}), "ask"),
- ("bash_history", pre("Bash", {"command": "grep token ~/.bash_history"}), "ask"),
- ("claude -p (bez dotazu)", pre("Bash", {"command": "claude -p 'ahoj'"}), "-"),
- ("agy -p (bez dotazu)", pre("Bash", {"command": "agy --mode plan -p 'x'"}), "-"),
- ("agy models (čtení)", pre("Bash", {"command": "agy models"}), "-"),
- ("Agent (bez dotazu)", pre("Agent", {"prompt": "x"}), "-"),
- ("zadej_ukol (bez dotazu)", pre("mcp__claude_ai_D_lna__zadej_ukol", {}), "-"),
- ("Dílna stav (čtení)", pre("mcp__claude_ai_D_lna__stav", {}), "-"),
- ("Edit /etc", pre("Edit", {"file_path": "/etc/dnf/dnf.conf"}), "ask"),
- ("Write .bashrc.d", pre("Write", {"file_path": os.path.expanduser("~/.bashrc.d/x.sh")}), "ask"),
- ("Write v projektu", pre("Write", {"file_path": "/home/marek/claude/styblo/x.md"}), "-"),
- ("Write scratchpad", pre("Write", {"file_path": SCR + "/y.txt"}), "-"),
- ("Read (nehlídá)", pre("Read", {"file_path": "/etc/passwd"}), "-"),
-]
-
-# mv / sed -i / rm vůči adresáři projektu (cwd); HOME jako cwd se za projekt nepovažuje
-PRJ = "/home/marek/claude/styblo"
-T += [
- ("mv v projektu (relativní)", pre("Bash", {"command": "mv a.txt b.txt"}, cwd=PRJ), "-"),
- ("mv v projektu (cesty)", pre("Bash", {"command": f"mv {PRJ}/a {PRJ}/docs/a"}, cwd=PRJ), "-"),
  ("sed -i v projektu", pre("Bash", {"command": "sed -i s/a/b/ main.py"}, cwd=PRJ), "-"),
- ("sed -i ~/.bashrc z projektu", pre("Bash", {"command": "sed -i s/a/b/ ~/.bashrc"}, cwd=PRJ), "ask"),
- ("mv z projektu ven", pre("Bash", {"command": f"mv {PRJ}/a /srv/a"}, cwd=PRJ), "ask"),
- ("mv ../ ven z projektu", pre("Bash", {"command": "mv a ../a"}, cwd=PRJ), "ask"),
- ("mv holé názvy bez cwd", pre("Bash", {"command": "mv a.txt b.txt"}), "ask"),
- ("mv holé názvy, cwd = HOME", pre("Bash", {"command": "mv a.txt b.txt"}, cwd=os.path.expanduser("~")), "ask"),
- ("rm v projektu se ptá dál", pre("Bash", {"command": f"rm -f {PRJ}/a.txt"}, cwd=PRJ), "ask"),
+ ("sed -i v datech mimo projekt", pre("Bash", {"command": f"sed -i s/a/b/ {H}/.bashrc"}, cwd=PRJ), "ask"),
+ ("echo >> paměť Claude", pre("Bash", {"command": f"echo x >> {H}/.claude/projects/p/memory/MEMORY.md"}), "-"),
+ # (c) nastavení Claude Code
+ ("Edit ~/.claude/settings.json", pre("Edit", {"file_path": H + "/.claude/settings.json"}), "ask"),
+ ("Write ~/.claude/hooks", pre("Write", {"file_path": H + "/.claude/hooks/x.py"}), "ask"),
+ ("echo >> settings.json", pre("Bash", {"command": f"echo x >> {H}/.claude/settings.json"}), "ask"),
+ ("sed -i settings.local.json", pre("Bash", {"command": f"sed -i s/a/b/ {H}/.claude/settings.local.json"}), "ask"),
+ ("Write ~/.ssh/config", pre("Write", {"file_path": H + "/.ssh/config"}), "ask"),
+ # (b) tajné soubory: čtení obsahu ano, použití klíče a výpis jmen ne
+ ("cat bash_history", pre("Bash", {"command": "grep token ~/.bash_history"}), "ask"),
+ ("cat soukromý klíč", pre("Bash", {"command": "cat ~/.ssh/id_rsa"}), "ask"),
+ ("ls ~/.ssh", pre("Bash", {"command": "ls ~/.ssh"}), "-"),
+ ("ssh -i klíč", pre("Bash", {"command": "timeout 8 ssh -o BatchMode=yes -i ~/.ssh/klic_ed25519 user@h true"}), "-"),
+ ("grep ~/.ssh/config", pre("Bash", {"command": "grep -A4 pve ~/.ssh/config"}), "-"),
+ ("grep known_hosts", pre("Bash", {"command": "grep -rl chytrolin ~/.ssh/known_hosts"}), "-"),
+ # AskUserQuestion se od 0.8.0 nezamítá (kdy se ptát, určují pravidla)
+ ("AskUserQuestion projde", pre("AskUserQuestion", {"questions": [{"question": "Mám použít A, nebo B?"}]}), "-"),
+ ("AskUserQuestion subagent", pre("AskUserQuestion", {"questions": [{"question": "Pokračovat?"}]}, agent_id="a1"), "-"),
 ]
 
-# AskUserQuestion: ptát se jen na mazání a hesla/tokeny/klíče (a dílnu)
-def q(text, **kw): return pre("AskUserQuestion", {"questions": [{"question": text, "options": [{"label": "A"}, {"label": "B"}]}]}, **kw)
-def tr_with(text):
-    f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
-    f.write(json.dumps({"type": "user", "message": {"content": [{"type": "tool_result", "content": text}]}}) + "\n")
-    f.close(); return f.name
-T += [
- ("otázka: zbytečná -> deny", q("Mám použít knihovnu A, nebo B?"), "deny"),
- ("otázka: zbytečná (push)", q("Smím pushnout do repa?"), "deny"),
- ("otázka: mazání projde", q("Smazat starou zálohu /srv/zaloha?"), "-"),
- ("otázka: heslo projde", q("Vložit heslo do konfigurace?"), "-"),
- ("otázka: token projde", q("Použít produkční token?"), "-"),
- ("otázka: dílna projde", q("Zadat úkol do dílny?"), "-"),
- ("otázka: FORMULAR v přepisu projde", q("Který model?", transcript_path=tr_with("FORMULAR\nQ model\n- a: x")), "-"),
- ("otázka: přepis bez FORMULAR -> deny", q("Který model?", transcript_path=tr_with("nic")), "deny"),
- ("otázka: subagent se hlídá také", q("Mám pokračovat?", agent_id="a1"), "deny"),
-]
-os.environ["MAREK_ASK_MODE"] = "off"
-T += [("otázka: MAREK_ASK_MODE=off", q("Mám použít A, nebo B?"), "-")]
-del os.environ["MAREK_ASK_MODE"]
 # brána báze: nová session bez `pravidla`
 T += [("brána 1. pokus", pre("Bash", {"command": "ls"}, sid="s2"), "deny"),
       ("brána 2. pokus", pre("Bash", {"command": "ls"}, sid="s2"), "deny"),
