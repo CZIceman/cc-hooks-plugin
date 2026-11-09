@@ -23,6 +23,36 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 
 Tři původní hooky jen vypíšou text (stdout jde do kontextu), vždy `exit 0`. Hooky od 0.6.0 text vkládají jen jako důvod rozhodnutí nebo kontext; při chybě skriptu akce pokračuje (`exit 0` bez výstupu).
 
+## Stavová řádka (`statusline/`)
+
+Samostatný skript, není součástí hooků pluginu (plugin `statusLine` nastavit neumí, cesta
+synchronizovaného pluginu se mění s verzí). Ukazuje, kolik práce ještě zbývá:
+
+`Opus 5.5 · high │ ██░░░░░░░░ zbývá 78% │ ⧗ 12 min │ 5h zbývá 27% · 1:48 ⚠ dojde za 0:40 │ týden zbývá 69% · 2d 5h │ ~/claude │ master ±2 +1 ↑1 │ 📁 scratch`
+
+| Segment | Zdroj (stdin JSON Claude Code) | Pravidlo |
+|---|---|---|
+| model a úsilí | `model.display_name`, `effort.level` | vždy, např. `Opus 5.5 · high` |
+| kontext této session | `context_window.used_percentage` / `remaining_percentage` | pruh podle spotřeby, text „zbývá“; zelená < 50 %, žlutá < 80 %, jinak červená |
+| cache | `prompt_cache.warm`, `ttl`, `expires_at` | jen teplá a do vypršení ≤ 15 min (ttl 5m: ≤ 2 min); pod 5 min červeně |
+| 5h a týden | `rate_limits.five_hour` / `seven_day`: `used_percentage`, `resets_at` | zbývá % (> 50 zelená, > 20 žlutá, jinak červená) a čas do resetu; „⚠ dojde za …“, když by při dosavadním tempu v okně (used / uplynulý čas) limit došel před resetem; počítá se až po 10 min (5h) resp. 6 h (týden) okna |
+| projekt | `workspace.project_dir` | `~/…`, klikací odkaz OSC 8 |
+| git | `git status --porcelain -b` v `cwd` | větev, `🌿` v odděleném worktree, `±N` změněné, `+N` nesledované (žlutě), `↑N` neodeslané commity |
+| odkládací složka | `scratchpad_dir` | jen když v ní něco je, klikací |
+
+Chybějící pole segment vynechá, skript nikdy nespadne a nic nezapisuje. Tvar vstupu ověřen na
+Claude Code 2.1.319 (`statusline/tests/vzorek-2.1.319.json`). Test:
+`python3 statusline/tests/test-statusline.py`.
+
+Zapnutí na stroji (v `~/.claude/settings.json`; na fedoraNTB od 9. 11. 2026, klon repa v `~/cc-hooks-plugin`):
+
+```json
+"statusLine": {"type": "command", "command": "/home/marek/cc-hooks-plugin/statusline/statusline.py", "refreshInterval": 30}
+```
+
+`refreshInterval` překresluje řádku každých 30 s i bez nové zprávy (odpočty). Jeden běh trvá
+~0,05 s.
+
 ## Instalace (jednou, ať se pak synchronizuje sama)
 
 Přesná cesta k účtové synchronizaci závisí na tom, kde marketplace hostuje —
