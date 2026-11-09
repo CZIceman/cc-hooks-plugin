@@ -20,13 +20,14 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | `pretool-guard.py` | `PreToolUse` | **okno oprávnění (`ask`) jen na mazání a přepis dat, čtení tajemství a změnu nastavení Claude** (od 0.8.0, viz níže) a brána báze |
 | `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na změnu bez zápisu do báze nebo dokumentu (`MAREK_STOP_MODE=block` by blokoval) |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
+| `statusline-start.py` | `SessionStart` | od 0.9.0: nainstaluje stavovou řádku (`statusline/statusline.py`) do `~/.claude/marek-statusline/` a doplní `statusLine` do `~/.claude/settings.json` (pravidla viz „Stavová řádka“); nic nevypisuje, vždy `exit 0`; `MAREK_STATUSLINE=0` ho vypne |
 
 Tři původní hooky jen vypíšou text (stdout jde do kontextu), vždy `exit 0`. Hooky od 0.6.0 text vkládají jen jako důvod rozhodnutí nebo kontext; při chybě skriptu akce pokračuje (`exit 0` bez výstupu).
 
 ## Stavová řádka (`statusline/`)
 
-Samostatný skript, není součástí hooků pluginu (plugin `statusLine` nastavit neumí, cesta
-synchronizovaného pluginu se mění s verzí). Ukazuje, kolik práce ještě zbývá:
+Skript `statusline/statusline.py` na stroje rozváží plugin hookem `statusline-start.py`
+(od 0.9.0). Ukazuje, kolik práce ještě zbývá:
 
 `Opus 5.5 · high │ ██░░░░░░░░ zbývá 78% │ ⧗ 12 min │ 5h zbývá 27% · 1:48 ⚠ dojde za 0:40 │ týden zbývá 69% · 2d 5h │ ~/claude │ master ±2 +1 ↑1 │ 📁 scratch`
 
@@ -44,10 +45,34 @@ Chybějící pole segment vynechá, skript nikdy nespadne a nic nezapisuje. Tvar
 Claude Code 2.1.319 (`statusline/tests/vzorek-2.1.319.json`). Test:
 `python3 statusline/tests/test-statusline.py`.
 
-Zapnutí na stroji (v `~/.claude/settings.json`; na fedoraNTB od 9. 11. 2026, klon repa v `~/cc-hooks-plugin`):
+### Jak se na stroj dostane (`hooks/statusline-start.py`, `SessionStart`)
+
+Plugin nemůže nastavit hlavní `statusLine` přes vlastní `settings.json`: podporuje jen
+`agent` a `subagentStatusLine` (ověřeno v binárce Claude Code 2.1.319). Také cesta
+synchronizovaného pluginu se mění s verzí. Proto hook při každém startu session:
+
+1. Zkopíruje `statusline/statusline.py` z pluginu do `~/.claude/marek-statusline/statusline.py`
+   (stálá cesta; atomicky, práva 0755; stejný obsah = nic neděláno).
+2. Zajistí v `~/.claude/settings.json` záznam
+   `{"type": "command", "command": "python3 ~/.claude/marek-statusline/statusline.py" (absolutní cesta), "refreshInterval": 30}`:
+   - soubor chybí: vytvoří se jen s klíčem `statusLine`;
+   - klíč `statusLine` chybí: doplní se;
+   - `command` obsahuje `marek-statusline/statusline.py` nebo `cc-hooks-plugin/statusline/statusline.py`
+     (naše starší ruční nasazení) a liší se od standardní hodnoty: nahradí se standardní hodnotou;
+   - **cizí `statusLine` se nikdy nepřepíše**;
+   - soubor není platný JSON nebo to není objekt: nic se nemění;
+   - zapisuje se jen při změně, atomicky, s původními právy; ostatní klíče a jejich pořadí zůstanou.
+3. `MAREK_STATUSLINE=0` v prostředí = hook nedělá nic.
+
+Hook nikdy nic nevypíše na stdout (šlo by do kontextu) ani na stderr a vždy skončí `exit 0`; každá chyba je tichá.
+Změna se projeví nejpozději v další **nové** session po aktualizaci pluginu (hook běží až při startu
+session, která už nový plugin načetla). Test:
+`python3 tests/test-statusline-start.py`.
+
+Ruční zapnutí jen pro stroj bez pluginu (v `~/.claude/settings.json`, klon repa např. v `~/cc-hooks-plugin`):
 
 ```json
-"statusLine": {"type": "command", "command": "/home/marek/cc-hooks-plugin/statusline/statusline.py", "refreshInterval": 30}
+"statusLine": {"type": "command", "command": "python3 /home/marek/cc-hooks-plugin/statusline/statusline.py", "refreshInterval": 30}
 ```
 
 `refreshInterval` překresluje řádku každých 30 s i bez nové zprávy (odpočty). Jeden běh trvá
