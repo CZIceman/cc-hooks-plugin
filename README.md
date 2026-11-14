@@ -84,7 +84,7 @@ Přesná cesta k účtové synchronizaci závisí na tom, kde marketplace hostuj
 viz `INSTALACE.md`. Lokální ověření na tomto stroji:
 
 ```
-claude plugin marketplace add /home/marek/claude/cc-hooks-plugin
+claude plugin marketplace add /home/marek/cc-hooks-plugin
 claude plugin install marek-cc-hooks@marek-hooks
 ```
 
