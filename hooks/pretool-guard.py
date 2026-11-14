@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse hook (marek-cc-hooks 0.8.0) — okno oprávnění jen tam, kde jde o data nebo tajemství.
+"""PreToolUse hook (marek-cc-hooks 0.10.0) — okno oprávnění jen tam, kde jde o data nebo tajemství.
 
 Princip: souhlas nehlídá model, ale okno oprávnění Claude Code. Rizikovou akci hook vrátí jako
 permissionDecision "ask" (Marek potvrdí), nic dalšího neschvaluje. Ostatní akce propustí mlčky.
@@ -10,6 +10,8 @@ Rozhodnutí Marka 29. 10. 2026 (0.8.0): okno jen na
   (b) čtení obsahu tajných souborů (klíče, historie, tokeny),
   (c) změnu nastavení a hooků Claude Code (~/.claude/settings*, hooks, plugins, ~/.config/marek-hooks).
 Systémové změny (sudo, dnf, systemctl, zápis do /etc), push a běhy modelů se neptají.
+Od 0.10.0 navíc brzda zápisu do báze: `zapis` v tahu, kde se pracovalo, se poprvé zamítne (nejdřív výsledek
+Markovi, pak zápis; rozhodnutí Marka 14. 11. 2026). Podrobnosti u kódu brzdy.
 Zahazování otázek AskUserQuestion podle textu (0.7.0) je zrušené: kdy se ptát, určují pravidla.
 
 Hodnotí se jen to, co shell skutečně spustí: příkaz se rozloží na jednoduché příkazy, těla heredoců
@@ -65,6 +67,44 @@ if not d.get("agent_id"):
                 open(f + ".n", "w").write(str(n + 1))
                 out("deny", "Pravidlo báze: než začneš cokoli řešit, zavolej `pravidla` (a `hledej`). "
                     "Nástroje načti přes ToolSearch (dotaz „Second Brain“).")
+
+    # ---------- brzda zápisu do báze (0.10.0): nejdřív výsledek Markovi, pak `zapis` ----------
+    # V tahu, kde se pracovalo (běžel i jiný nástroj než báze), se první `zapis` zamítne. Projde, když
+    # Marek o zápis v poslední zprávě výslovně požádal, nebo při opakovaném volání v témže tahu (session
+    # bez Marka). Subagenti se nehlídají. Vypnutí: MAREK_ZAPIS_BRZDA=off. Nejde-li přepis přečíst, zápis projde.
+    if "Second_Brain__zapis" in tool and os.environ.get("MAREK_ZAPIS_BRZDA", "on") != "off":
+        turn_id, worked, asked = "", False, False
+        try:
+            for n, line in enumerate(open(d.get("transcript_path") or "", encoding="utf-8")):
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                m = r.get("message")
+                if not isinstance(m, dict):
+                    continue
+                c = m.get("content")
+                if r.get("type") == "user":
+                    txt = c if isinstance(c, str) else " ".join(
+                        b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text") \
+                        if isinstance(c, list) else ""
+                    if txt or (isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "image" for b in c)):
+                        turn_id, worked = str(r.get("uuid") or n), False
+                        asked = bool(re.search(r"zapi[sš]|zapsat|do b[aá]ze|v[yý]tah", txt, re.I))
+                elif r.get("type") == "assistant" and isinstance(c, list):
+                    for b in c:
+                        if isinstance(b, dict) and b.get("type") == "tool_use" and "Second_Brain" not in b.get("name", "") \
+                                and b.get("name") not in ("ToolSearch", "AskUserQuestion", "ReadNotifications"):
+                            worked = True
+        except Exception:
+            worked = False
+        if worked and not asked:
+            zf = os.path.join(st, re.sub(r"[^A-Za-z0-9_-]", "", sid) + ".zapis")
+            if (open(zf).read() if os.path.exists(zf) else None) != turn_id:
+                open(zf, "w").write(turn_id)
+                out("deny", "Pravidlo: nejdřív výsledek předlož Markovi, do báze zapiš až po jeho reakci, jednou za téma. "
+                    "V tomto tahu se pracovalo, zápis proto odlož a na konec hlášení napiš jedním řádkem, co a kam zapíšeš. "
+                    "Výjimka: session běží bez Marka (naplánovaná úloha, práce pro řídící session); pak volání zopakuj, projde.")
 
 # ---------- místa ----------
 def under(p, base):

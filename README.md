@@ -14,11 +14,11 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 
 | Hook | Událost | Co dělá |
 |---|---|---|
-| `baze-start.sh` | `SessionStart` | připomene bázi: než se začne cokoli řešit, nejdřív `pravidla` a `hledej` (levné, možná jsme to už řešili nebo víme, co nefunguje); vše důležité včetně slepých uliček zapisovat hned |
-| `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, samostatná práce bez zbytečných dotazů, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
-| `baze-precompact.sh` | `PreCompact` | těsně před zhuštěním kontextu připomene zapsat do báze, co z této session ještě v bázi není. Neblokuje |
-| `pretool-guard.py` | `PreToolUse` | **okno oprávnění (`ask`) jen na mazání a přepis dat, čtení tajemství a změnu nastavení Claude** (od 0.8.0, viz níže) a brána báze |
-| `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na změnu bez zápisu do báze nebo dokumentu (`MAREK_STOP_MODE=block` by blokoval) |
+| `baze-start.sh` | `SessionStart` | připomene bázi: než se začne cokoli řešit, nejdřív `pravidla` a `hledej` (levné, možná jsme to už řešili nebo víme, co nefunguje); výsledek nejdřív předložit Markovi, do báze zapisovat až po jeho reakci, jednou za téma (od 0.10.0) |
+| `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, nejdřív výsledek a pak zápis do báze, samostatná práce bez zbytečných dotazů, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
+| `baze-precompact.sh` | `PreCompact` | těsně před zhuštěním kontextu připomene zapsat do báze to, co Marek už viděl a v bázi ještě není; ostatní má jít do shrnutí jako čekající na zápis (od 0.10.0). Neblokuje |
+| `pretool-guard.py` | `PreToolUse` | **okno oprávnění (`ask`) jen na mazání a přepis dat, čtení tajemství a změnu nastavení Claude** (od 0.8.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0) |
+| `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval) |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
 | `statusline-start.py` | `SessionStart` | od 0.9.0: nainstaluje stavovou řádku (`statusline/statusline.py`) do `~/.claude/marek-statusline/` a doplní `statusLine` do `~/.claude/settings.json` (pravidla viz „Stavová řádka“); nic nevypisuje, vždy `exit 0`; `MAREK_STATUSLINE=0` ho vypne |
 
@@ -155,12 +155,42 @@ Stav je v `$XDG_RUNTIME_DIR/marek-hooks/<session_id>.baze`.
 Tajné cesty specifické pro stroj (např. soubory s tokeny) **nejsou v repu** (repo je veřejné). Jsou v lokálním souboru
 `~/.config/marek-hooks/tajne.txt`: jeden regulární výraz na řádek, `#` komentář. Chybí-li soubor, platí jen obecné vzory.
 
-`stop-guard.py` (Stop): upozornění „hotovo bez ověření“ a „změna bez dokumentace“ jdou jako `additionalContext`;
+`stop-guard.py` (Stop): upozornění „hotovo bez ověření“ a „commit bez dokumentace“ jdou jako `additionalContext`;
 druhé volání v téže odpovědi (`stop_hook_active`) mlčí. Potřebuje přepis session (`--no-session-persistence` ho nevytvoří).
 
 **Nová verze platí až v nové session.** Běžící session drží verzi pluginu, se kterou startovala
 (`…/synced/<bucket>/marek-cc-hooks~gN/.in_use/<PID>`); ověřeno 29. 10. 2026: dvě session z 26. 10. a 29. 10. 13:38 běžely
 s 0.6.0, ačkoli 0.7.0 už byla stažená.
+
+### Od 0.10.0: nejdřív výsledek, pak zápis do báze (rozhodnutí Marka, 14. 11. 2026)
+
+Do 0.9.0 plugin nařizoval zapisovat do báze „hned“ (`baze-start.sh`) a `stop-guard.py` to po každé změně
+připomínal. Měření z přepisů session na notebooku fedora za 30 dní do 14. 11. 2026 (25 session): 594 volání
+`zapis`, z toho 544 ve stejném tahu jako práce (dřív, než Marek výsledek viděl), 490 opakovaných přepisů téže
+poznámky v jedné session, průměrně 13 594 znaků na zápis (posílá se celá poznámka). Při nesouhlasu s výsledkem
+se tak zapisovalo a opravovalo zbytečně.
+
+Od 0.10.0 platí pořadí: výsledek Markovi, po jeho reakci (souhlas, nebo pokračování bez námitky) zápis do báze,
+jednu poznámku jednou za téma. Dokumentace projektu (README, HANDOFF, docs/) zůstává ve stejném commitu se změnou.
+
+| Místo | Změna |
+|---|---|
+| `pravidla.txt` | nová sekce „Nejdřív výsledek, pak zápis do báze“ (znění platí i pro profil claude.ai) |
+| `baze-start.sh` | místo „zapisuj hned“: výsledek nejdřív Markovi, zápis po jeho reakci |
+| `baze-precompact.sh` | zapsat jen to, co Marek už viděl; ostatní do shrnutí jako čekající na zápis |
+| `stop-guard.py` | upozornění (b) už nepřipomíná bázi a spouští se jen při `git commit` bez dotčené dokumentace projektu (dokument upravený přes Edit/Write nebo zmíněný v příkazu) |
+| `pretool-guard.py` | brzda zápisu, viz níže |
+
+Brzda zápisu: `zapis` v tahu, kde už běžel jiný nástroj než báze (`ToolSearch`, `AskUserQuestion` a
+`ReadNotifications` se nepočítají), hook poprvé zamítne s odkazem na pravidlo. Projde, když Marek v poslední
+zprávě o zápis výslovně požádal (slova zapiš, zapsat, do báze, výtah), a při opakovaném volání v témže tahu
+(session bez Marka: naplánovaná úloha, práce pro řídící session). Subagenty nehlídá; nejde-li přepis session
+přečíst, zápis projde. Stav je v `$XDG_RUNTIME_DIR/marek-hooks/<session_id>.zapis`.
+Cena brzdy: zamítnuté volání už nese celý text poznámky, který model vygeneroval zbytečně.
+Vypnutí bez nové verze: proměnná prostředí `MAREK_ZAPIS_BRZDA=off`. Návrat celé změny: `git revert` commitu 0.10.0.
+
+Mimo plugin musí stejné pořadí říkat profil claude.ai (chat a Cowork hooky nemají) a pravidla báze (§10, mění
+správce na serveru).
 
 ### Potvrzování zpráv od jiných agentů (od 0.7.0)
 

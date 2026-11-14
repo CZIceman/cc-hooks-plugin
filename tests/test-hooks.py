@@ -120,6 +120,32 @@ os.environ["HOME"] = tempfile.mkdtemp()
 T += [("bez tajne.txt: obecné vzory", pre("Bash", {"command": "cat ~/.bash_history"}), "ask"),
       ("bez tajne.txt: běžný příkaz", pre("Bash", {"command": "ls"}), "-")]
 os.environ["HOME"] = _old
+# brzda zápisu do báze (0.10.0): `zapis` v tahu, kde se pracovalo, se poprvé zamítne
+def tr(*items):
+    f = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+    for i in items: f.write(json.dumps(i) + "\n")
+    f.close(); return f.name
+U = lambda t, u: {"type": "user", "uuid": u, "message": {"role": "user", "content": t}}
+A = lambda *names: {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": n, "input": {}} for n in names]}}
+ZAPIS, HLEDEJ = "mcp__claude_ai_Marek_Second_Brain__zapis", "mcp__claude_ai_Marek_Second_Brain__hledej"
+zap = lambda t, **kw: pre(ZAPIS, {}, sid="s1", transcript_path=t, **kw)
+t_prace = tr(U("oprav to", "u1"), A("Bash", "Edit"))
+t_prace2 = tr(U("oprav to", "u1"), A("Bash"), U("a ještě tohle", "u2"), A("Bash"))
+t_baze = tr(U("oprav to", "u1"), A("Bash"), U("ano, souhlasím", "u2"), A(HLEDEJ, "ToolSearch"))
+t_zadost = tr(U("změř to a zapiš do báze", "u1"), A("Bash"))
+t_vytah = tr(U("udělej výtah z přílohy", "u1"), A("Bash"))
+T += [("brzda: zápis po práci v tahu", zap(t_prace), "deny"),
+      ("brzda: opakování v témže tahu", zap(t_prace), "-"),
+      ("brzda: nový tah s prací", zap(t_prace2), "deny"),
+      ("brzda: tah jen s bází", zap(t_baze), "-"),
+      ("brzda: výslovná žádost o zápis", zap(t_zadost), "-"),
+      ("brzda: výtah dokumentu", zap(t_vytah), "-"),
+      ("brzda: subagent se nehlídá", pre(ZAPIS, {}, sid="s5", transcript_path=t_prace, agent_id="a1"), "-"),
+      ("brzda: bez přepisu projde", pre(ZAPIS, {}, sid="s1"), "-"),
+      ("brzda: jiný nástroj báze projde", pre(HLEDEJ, {}, sid="s1", transcript_path=t_prace2), "-")]
+os.environ["MAREK_ZAPIS_BRZDA"] = "off"
+T += [("brzda: vypnutá proměnnou", pre(ZAPIS, {}, sid="s6", transcript_path=tr(U("x", "u9"), A("Bash")), agent_id=None), "-")]
+del os.environ["MAREK_ZAPIS_BRZDA"]
 bad = 0
 for n, (rc, dec), exp in T:
     ok = rc == 0 and dec == exp

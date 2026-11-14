@@ -18,8 +18,14 @@ def run(items, final, **kw):
 cases = [
  ("hotovo bez příkazu", [U("oprav"), A(TXT("Je to hotovo."))], "Je to hotovo.", "ctx"),
  ("hotovo s Bash", [U("oprav"), A(TU("Bash", {"command": "pytest"}), TXT("Hotovo"))], "Hotovo, testy prošly.", "-"),
- ("změna bez dokumentace", [U("x"), A(TU("Bash", {"command": "sudo dnf install -y htop"}), TXT("Nainstalováno."))], "Nainstalováno.", "ctx"),
- ("změna + zápis do báze", [U("x"), A(TU("Bash", {"command": "sudo dnf install -y htop"}), TU("mcp__claude_ai_Marek_Second_Brain__zapis", {}), TXT("Ok"))], "Ok", "-"),
+ # od 0.10.0: upozornění jen na commit bez dokumentace projektu; zápis do báze dokumentaci nenahrazuje
+ ("změna bez commitu", [U("x"), A(TU("Bash", {"command": "sudo dnf install -y htop"}), TXT("Nainstalováno."))], "Nainstalováno.", "-"),
+ ("commit bez dokumentace", [U("x"), A(TU("Bash", {"command": "git add a.py && git commit -m x"}), TXT("Commit proveden."))], "Commit proveden.", "ctx"),
+ ("git -C commit bez dokumentace", [U("x"), A(TU("Bash", {"command": "git -C /srv/x commit -am x"}), TXT("Commit proveden."))], "Commit proveden.", "ctx"),
+ ("commit + zápis do báze", [U("x"), A(TU("Bash", {"command": "git commit -am x"}), TU("mcp__claude_ai_Marek_Second_Brain__zapis", {}), TXT("Ok"))], "Ok", "ctx"),
+ ("commit s README v příkazu", [U("x"), A(TU("Bash", {"command": "git add a.py README.md && git commit -m x"}), TXT("Ok"))], "Ok", "-"),
+ ("commit + Edit HANDOFF", [U("x"), A(TU("Edit", {"file_path": "/p/HANDOFF.md"}), TU("Bash", {"command": "git commit -am x"}), TXT("Ok"))], "Ok", "-"),
+ ("git log není commit", [U("x"), A(TU("Bash", {"command": "git log --oneline | head"}), TXT("Vidím 3 commity."))], "Vidím 3 commity.", "-"),
  ("jen čtení", [U("x"), A(TU("Bash", {"command": "ls -la"}), TXT("Vidím 3 soubory."))], "Vidím 3 soubory.", "-"),
  ("starý tah se nepočítá", [U("a"), A(TU("Bash", {"command": "rm x"})), U("b"), A(TXT("Odpověď bez změn."))], "Odpověď bez změn.", "-"),
 ]
