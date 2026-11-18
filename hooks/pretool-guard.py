@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
-"""PreToolUse hook (marek-cc-hooks 0.10.0) — okno oprávnění jen tam, kde jde o data nebo tajemství.
+"""PreToolUse hook (marek-cc-hooks 0.11.0) — plugin je jediný strážce: rizikové ptá, ostatní výslovně povolí.
+
+Rozhodnutí Marka 18. 11. 2026 (0.11.0): „vyřešit systémově a jednou provždy“. Agenti, kteří běží bez člověka
+(v noci), se zastavovali na zbytečných oknech: za 3 týdny 65 oken, skoro všechna zbytečná (pracovní adresář agenta
+v kontejneru, dočasné složky, soubor v gitu). Navíc vedle oken hooku vyskakovala běžná okna Claude Code.
 
 Princip: souhlas nehlídá model, ale okno oprávnění Claude Code. Rizikovou akci hook vrátí jako
-permissionDecision "ask" (Marek potvrdí), nic dalšího neschvaluje. Ostatní akce propustí mlčky.
+permissionDecision "ask" (Marek potvrdí). Co rizikové není, hook od 0.11.0 VÝSLOVNĚ POVOLÍ ("allow"),
+takže se neukáže ani běžné okno Claude Code. Výjimka: interaktivní nástroje (AskUserQuestion, ExitPlanMode,
+EnterPlanMode) hook nechává bez výstupu, ať allow neobejde dialog s uživatelem. Vypínač: MAREK_HOOK_ALLOW=off
+(pak se allow nevypisuje, chování jako do 0.10.0). Chyba skriptu = exit 0 bez výstupu (bez allow).
 
-Rozhodnutí Marka 29. 10. 2026 (0.8.0): okno jen na
-  (a) mazání nebo přepis dat mimo pracovní místa (scratchpad, /tmp, /var/tmp, adresář projektu = cwd),
-      destruktivní git a operace s disky, které ničí data,
-  (b) čtení obsahu tajných souborů (klíče, historie, tokeny),
-  (c) změnu nastavení a hooků Claude Code (~/.claude/settings*, hooks, plugins, ~/.config/marek-hooks).
+Okno (ask) jen na:
+  (a) NEVRATNOU ZTRÁTU DAT: mazání/přepis cesty, která leží v datovém úložišti A NEJDE VRÁTIT.
+      Vratné: dočasné složky (/tmp, /var/tmp, /dev/shm, /run/user/N kromě gvfs a doc), ~/.cache, scratchpad,
+      ~/.claude/jobs/*/tmp, paměť Claude, adresář projektu, __pycache__ a *.pyc, lokálně i čistý sledovaný soubor
+      v git pracovní kopii. Datová úložiště lokálně: domov, /home, /root, /mnt, /media, /run/media, /srv, gvfs;
+      vzdáleně (ssh, pct exec): /mnt, /media, /home, /srv/dev-disk-*, /export, /var/lib/vz, /var/lib/pve, /etc/pve,
+      /config; vzdáleně je navíc vratný log (*.log, *.log.N) a cesta se segmentem „claude“.
+      Mimo datová úložiště (lokálně /opt, /etc, vzdáleně /srv/cfd, /root…) se mazání neptá.
+      Dále destruktivní git (mimo scratchpad a /tmp) a operace s disky, které ničí data;
+  (b) čtení obsahu tajných souborů (klíče, historie, tokeny), Bash i nástroj Read;
+  (c) změnu nastavení a hooků Claude Code (~/.claude/settings*, hooks, plugins, ~/.config/marek-hooks,
+      /etc/claude-code) a klíčů (.ssh, .gnupg); výjimka: ~/.ssh/known_hosts* je veřejný soubor.
 Systémové změny (sudo, dnf, systemctl, zápis do /etc), push a běhy modelů se neptají.
 Od 0.10.0 navíc brzda zápisu do báze: `zapis` v tahu, kde se pracovalo, se poprvé zamítne (nejdřív výsledek
 Markovi, pak zápis; rozhodnutí Marka 14. 11. 2026). Podrobnosti u kódu brzdy.
@@ -17,15 +31,30 @@ Zahazování otázek AskUserQuestion podle textu (0.7.0) je zrušené: kdy se pt
 Hodnotí se jen to, co shell skutečně spustí: příkaz se rozloží na jednoduché příkazy, těla heredoců
 se přeskočí, řetězce zůstanou jedním slovem (slovo „rm“ v echo/grep nebo v kódu Pythonu nevadí),
 `sudo`, `timeout`, `env`, `bash -c '…'` se rozbalí, jednoduchá přiřazení (S=…; rm $S/x) se dosadí.
-Příkazy uvnitř `ssh host …` a `pct exec N -- …` běží jinde: pracovní místa tam jsou jen /tmp a /var/tmp.
-Kód skriptů (python3 -c, heredoc) se nehodnotí. Chyba skriptu = akce pokračuje (exit 0 bez výstupu).
+Příkazy uvnitř `ssh host …` a `pct exec N -- …` běží jinde (vzdálená pravidla, sleduje se `cd` od „/“).
+Kód skriptů (python3 -c, heredoc) se nehodnotí.
 """
-import glob, json, os, re, shlex, sys
+import glob, json, os, re, shlex, subprocess, sys, time
+
+# Chyba skriptu = akce pokračuje (exit 0 bez výstupu, bez allow).
+sys.excepthook = lambda *a: os._exit(0)
 
 
 def out(decision, reason):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
           "permissionDecision": decision, "permissionDecisionReason": reason}}, ensure_ascii=False))
+    sys.exit(0)
+
+
+# Interaktivní nástroje: allow by mohlo obejít dialog s uživatelem, hook u nich mlčí.
+INTERACTIVE = ("AskUserQuestion", "ExitPlanMode", "EnterPlanMode")
+HOOK_ALLOW = os.environ.get("MAREK_HOOK_ALLOW", "on") != "off"
+
+
+def finish():
+    """Nic rizikového nenalezeno: výslovné povolení (plugin je jediný strážce), jinak mlčení."""
+    if HOOK_ALLOW and tool not in INTERACTIVE:
+        out("allow", "marek-cc-hooks: bez rizika")
     sys.exit(0)
 
 
@@ -114,37 +143,130 @@ def under(p, base):
 PROTECT = [r"^%s/\.claude/(settings[^/]*\.json|hooks|plugins)(/|$)" % re.escape(home),
            r"^%s/\.config/marek-hooks(/|$)" % re.escape(home),
            r"^/etc/claude-code(/|$)", r"/\.ssh(/|$)", r"/\.gnupg(/|$)"]
-# Data: domovský adresář a připojená úložiště. Přepis existujícího souboru tady se ptá.
+# Veřejný soubor, zápis do něj (ssh přidává hostitele) se neptá.
+KNOWN_HOSTS = re.compile(r"/\.ssh/known_hosts[^/]*$")
+# Datová úložiště lokálně: domovský adresář a připojená úložiště (gvfs viz in_data).
 DATA = [home, "/home", "/root", "/mnt", "/media", "/run/media", "/srv"]
+# Datová úložiště vzdáleně (ssh, pct exec): NAS/OMV, domovy, Proxmox, Home Assistant.
+DATA_REMOTE = [r"^/(mnt|media|home|export|config)(/|$)", r"^/srv/dev-disk-[^/]*(/|$)",
+               r"^/var/lib/(vz|pve)(/|$)", r"^/etc/pve(/|$)"]
 
 def protected(p):
-    return any(re.search(x, p) for x in PROTECT)
+    return not KNOWN_HOSTS.search(p) and any(re.search(x, p) for x in PROTECT)
 
-def safe(p, remote=False):
-    """Pracovní místo: mazat a přepisovat se tu smí bez dotazu."""
-    if protected(p):
+def in_data(p, remote=False):
+    if p == "/" or p.startswith("/*"):
+        return True  # kořen (rm -rf /, /*) je vždy riziko
+    if remote:
+        return any(re.search(x, p) for x in DATA_REMOTE)
+    return any(under(p, b) for b in DATA) or bool(re.match(r"^/run/user/\d+/gvfs/", p))
+
+_git_cache = {}
+
+def git_clean(p):
+    """Lokálně: cesta (i glob) je v git pracovní kopii sledovaná a čistá, tedy jde vrátit z gitu.
+    Čisté = `git status --porcelain --ignored` prázdné (nebo jen __pycache__/.pyc). Chyba či timeout = False."""
+    if p not in _git_cache:
+        try:
+            _git_cache[p] = _git_clean(p)
+        except Exception:
+            _git_cache[p] = False
+    return _git_cache[p]
+
+def _git_clean(p):
+    if any(c in p for c in "*?["):
+        paths = sorted(glob.glob(p))
+    else:
+        paths = [p] if os.path.lexists(p) else []
+    if not paths or len(paths) > 500:
         return False
-    if under(p, "/tmp") or under(p, "/var/tmp") or p == "/dev/null":
+    groups = {}
+    for q in paths:
+        groups.setdefault(os.path.dirname(q), []).append(q)
+    if len(groups) > 5:
+        return False
+    end = time.monotonic() + 3  # celkový rozpočet na jednu cestu
+
+    def git(dr, *a):
+        t = end - time.monotonic()
+        if t <= 0:
+            raise subprocess.TimeoutExpired("git", 3)
+        return subprocess.run(["git", "--no-optional-locks", "--literal-pathspecs", "-C", dr, *a],
+                              capture_output=True, text=True, timeout=t, stdin=subprocess.DEVNULL,
+                              env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+    for dr, ps in groups.items():
+        # sledovaná: každá z cest musí odpovídat něčemu v indexu
+        if git(dr, "ls-files", "--error-unmatch", "--", *ps).returncode != 0:
+            return False
+        st = git(dr, "status", "--porcelain", "--ignored", "--", *ps)
+        if st.returncode != 0:
+            return False
+        for ln in st.stdout.splitlines():
+            q = ln[3:]
+            if "__pycache__" not in q.split("/") and not q.rstrip("/").endswith(".pyc"):
+                return False
+    return True
+
+def reversible(p, remote=False, use_git=True):
+    """Ztrátu dat v cestě p jde vrátit (dočasné místo, projekt, cache, pycache, log, čistý git)."""
+    if p == "/dev/null" or any(under(p, b) for b in ("/tmp", "/var/tmp", "/dev/shm")):
+        return True
+    segs = p.split("/")
+    if "__pycache__" in segs or p.endswith(".pyc"):
         return True
     if remote:
-        return False
+        return bool(re.search(r"\.log(\.\d+)?$", p)) or any("claude" in sg.lower() for sg in segs)
     if re.match(r"^/run/user/\d+/", p) and not re.match(r"^/run/user/\d+/(gvfs|doc)(/|$)", p):
         return True  # XDG_RUNTIME_DIR (tmpfs), kromě připojených sdílení
-    return (under(p, scratch) or any(under(p, b) for b in projs) or under(p, home + "/.cache")
-            or bool(re.match(r"^%s/\.claude/projects/[^/]+/memory(/|$)" % re.escape(home), p)))
+    if (under(p, scratch) or any(under(p, b) for b in projs) or under(p, home + "/.cache")
+            or re.match(r"^%s/\.claude/projects/[^/]+/memory(/|$)" % re.escape(home), p)
+            or re.match(r"^%s/\.claude/jobs/[^/]+/tmp(/|$)" % re.escape(home), p)):
+        return True
+    return use_git and git_clean(p)
 
-def in_data(p):
-    return any(under(p, b) for b in DATA) or bool(re.match(r"^/run/user/\d+/gvfs/", p))
+def risky(p, remote=False, use_git=True):
+    """Okno jen když cesta leží v datovém úložišti A NEJDE VRÁTIT."""
+    if KNOWN_HOSTS.search(p):
+        return False  # veřejný soubor, ssh do něj zapisuje sám
+    return protected(p) or (in_data(p, remote) and not reversible(p, remote, use_git))
 
 # ---------- Edit/Write: Claude Code je umí vrátit (checkpoint), hlídá se jen nastavení a klíče ----------
 if tool in ("Edit", "Write", "NotebookEdit"):
     p = os.path.realpath(os.path.expanduser(ti.get("file_path") or ti.get("notebook_path") or ""))
     if protected(p):
         out("ask", f"Změna nastavení/hooků Claude Code nebo klíčů ({p}).")
-    sys.exit(0)
+    finish()
+
+# ---------- tajné soubory (Bash i Read): vzory ----------
+SECRET = [r"\.bash_history", r"/\.ssh/", r"\.gnupg", r"\.netrc", r"(^|/)\.env$", r"id_(rsa|ed25519|ecdsa)"]
+try:
+    for ln in open(os.path.expanduser("~/.config/marek-hooks/tajne.txt"), encoding="utf-8"):
+        ln = ln.strip()
+        if ln and not ln.startswith("#"):
+            SECRET.append(ln)
+except OSError:
+    pass
+# Veřejné části ~/.ssh (konfigurace, známé hostitele, veřejné klíče) tajné nejsou.
+SECRET_OK = re.compile(r"/\.ssh/(config|known_hosts[^/]*|authorized_keys|[^/]*\.pub)$")
+
+def _ok(rx):
+    try:
+        re.compile(rx)
+        return True
+    except re.error:
+        return False
+
+def is_secret(a):
+    return not SECRET_OK.search(a) and any(re.search(rx, a) for rx in SECRET if _ok(rx))
+
+if tool == "Read":
+    fp = ti.get("file_path") or ""
+    if fp and any(is_secret(x) for x in {fp, os.path.expanduser(fp), os.path.realpath(os.path.expanduser(fp))}):
+        out("ask", "Čtení tajného souboru (klíče, historie, tokeny).")
+    finish()
 
 if tool != "Bash":
-    sys.exit(0)
+    finish()
 
 cmd = ti.get("command") or ""
 
@@ -191,16 +313,43 @@ def simple_commands(c):
 VARS = {"HOME": home}
 
 def expand(w):
+    # ${X:-výchozí} / ${X-výchozí}: známá hodnota X, jinak výchozí (např. ${XDG_RUNTIME_DIR:-/tmp})
+    w = re.sub(r"\$\{(\w+):?-([^}$`]*)\}", lambda m: VARS.get(m.group(1)) or os.environ.get(m.group(1)) or m.group(2), w)
     w = re.sub(r"\$\{(\w+)\}|\$(\w+)", lambda m: VARS.get(m.group(1) or m.group(2), m.group(0)), w)
     return w
 
-def real(w, ecwd):
-    w = os.path.expanduser(expand(w))
+def _abs(w, ecwd, remote):
+    """Absolutní cesta ze slova; ~ vzdáleně = domov neznámého stroje (bere se jako /home/~, tedy data)."""
+    if w == "~" or w.startswith("~/"):
+        w = (("/home/~" if remote else home) + w[1:])
+    elif w.startswith("~") and not remote:
+        w = os.path.expanduser(w)
+    if not os.path.isabs(w):
+        if not ecwd:
+            return None  # cwd neznámé: relativní cestu nelze určit
+        w = os.path.join(ecwd, w)
+    # Vzdálené cesty se neřeší přes symlinky tohoto stroje.
+    return os.path.normpath(w) if remote else os.path.realpath(w)
+
+def real(w, ecwd, remote=False):
+    w = expand(w)
     if "$" in w or "`" in w:
         return None  # neznámá proměnná: místo nelze určit
-    if not os.path.isabs(w):
-        w = os.path.join(ecwd or "/nonexistent-cwd", w)
-    return os.path.realpath(w)
+    return _abs(w, ecwd, remote)
+
+def need_window(w, ecwd, remote):
+    """Mazání/přepis cesty `w`: vrátí popis, když to má vyvolat okno (v datech a nejde vrátit), jinak None."""
+    p = real(w, ecwd, remote)
+    if p is not None:
+        return p if risky(p, remote) else None
+    # neznámá proměnná: rozhodne pevný začátek cesty před prvním `$`; bez něj nelze určit = okno
+    pre = re.split(r"[$`]", expand(w), 1)[0]
+    if not pre:
+        return w
+    base = _abs(pre[:pre.rfind("/") + 1] or ".", ecwd, remote)
+    if base is None or base == "/":
+        return w
+    return w if risky(base, remote, use_git=False) else None
 
 WRAP_OPT = {"sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U"},
             "timeout": {"-s", "-k", "--signal", "--kill-after"},
@@ -212,16 +361,6 @@ DESTR_GIT = re.compile(r"^git\b.*\s(reset\s+--hard|clean\s+-\S*f|branch\s+-D|pus
                        r"checkout\s+--\s|restore\s|stash\s+(drop|clear))")
 DISK = re.compile(r"^(mkfs\S*|wipefs|parted|fdisk|sfdisk|sgdisk|blkdiscard|vgremove|lvremove|pvremove)$")
 
-SECRET = [r"\.bash_history", r"/\.ssh/", r"\.gnupg", r"\.netrc", r"(^|/)\.env$", r"id_(rsa|ed25519|ecdsa)"]
-try:
-    for ln in open(os.path.expanduser("~/.config/marek-hooks/tajne.txt"), encoding="utf-8"):
-        ln = ln.strip()
-        if ln and not ln.startswith("#"):
-            SECRET.append(ln)
-except OSError:
-    pass
-# Veřejné části ~/.ssh (konfigurace, známé hostitele, veřejné klíče) tajné nejsou.
-SECRET_OK = re.compile(r"/\.ssh/(config|known_hosts[^/]*|authorized_keys|[^/]*\.pub)$")
 # Příkazy, které tajný soubor jen použijí nebo vypíšou jeho jméno, ne obsah.
 NONREAD = {"ls", "stat", "ssh", "ssh-add", "ssh-keygen", "chmod", "chown", "test", "[", "file", "du",
            "find", "mkdir", "touch", "sftp", "git", "realpath", "readlink", "basename", "dirname", "mosh",
@@ -275,9 +414,8 @@ def check(words, ecwd, remote):
         return ecwd
     if head == "cd":
         if args and args[0] != "-":
-            r = real(args[0], ecwd)
-            return r or ecwd
-        return home
+            return real(args[0], ecwd, remote)  # neznámý cíl = neznámé cwd (relativní cesty pak vyvolají okno)
+        return "/home/~" if remote else home
 
     # redirekce: > přepíše, >> připojí
     clean, i = [], 0
@@ -288,13 +426,15 @@ def check(words, ecwd, remote):
             i += 2
             if a.endswith("&") or re.fullmatch(r"\d+", tgt) or tgt == "-":
                 continue  # 2>&1
-            p = real(tgt, ecwd)
+            p = real(tgt, ecwd, remote)
             if p is None:
+                if ">>" not in a and need_window(tgt, ecwd, remote):
+                    problems.append(f"přepis souboru s neznámou cestou ({tgt})")
                 continue
             if protected(p):
                 problems.append(f"zápis do nastavení Claude nebo klíčů ({p})")
-            elif ">>" not in a and not safe(p, remote) and in_data(p) and os.path.isfile(p) and not remote:
-                problems.append(f"přepis existujícího souboru {p}")
+            elif ">>" not in a and risky(p, remote) and (remote or os.path.isfile(p)):
+                problems.append(f"přepis souboru v datech, který nejde vrátit ({p})")
             continue
         if re.fullmatch(r"[0-9]*<+", a) and i + 1 < len(args):
             i += 2
@@ -307,75 +447,74 @@ def check(words, ecwd, remote):
         pos = [a for a in args[:args.index("--")] if not a.startswith("-")] + args[args.index("--") + 1:]
 
     def must_be_safe(paths, what):
-        bad = []
-        for w in paths:
-            p = real(w, ecwd)
-            if p is None or not safe(p, remote):
-                bad.append(p or w)
+        bad = [x for x in (need_window(w, ecwd, remote) for w in paths) if x]
         if bad:
             problems.append(f"{what}: {', '.join(bad[:3])}")
 
     # (a) mazání
     if head in ("rm", "rmdir", "unlink", "shred", "srm"):
         if pos:
-            must_be_safe(pos, "mazání mimo pracovní místa")
-        elif stdin_targets and not (ecwd and safe(ecwd, remote)):
-            problems.append("mazání souborů ze vstupu (xargs) mimo pracovní místa")
+            must_be_safe(pos, "nevratné mazání dat")
+        elif stdin_targets and (not ecwd or risky(ecwd, remote)):
+            problems.append("nevratné mazání souborů ze vstupu (xargs) v datovém úložišti")
     elif head == "truncate":
         must_be_safe([a for j, a in enumerate(args) if not a.startswith("-")
-                      and not (j and args[j - 1] in ("-s", "--size", "-r", "--reference"))], "zkrácení souboru")
+                      and not (j and args[j - 1] in ("-s", "--size", "-r", "--reference"))], "nevratné zkrácení souboru")
     elif head == "find" and ("-delete" in args or any(a in ("rm", "/bin/rm") for a in args)):
         starts = [a for a in args if not a.startswith(("-", "(", ")", "!"))][:1] or ["."]
-        must_be_safe(starts, "find -delete mimo pracovní místa")
+        must_be_safe(starts, "find -delete na datech, která nejdou vrátit")
     elif head == "rsync" and any(a.startswith("--delete") or a.startswith("--remove-source") for a in args):
         if pos and ":" not in pos[-1]:
-            must_be_safe(pos[-1:], "rsync --delete mimo pracovní místa")
+            must_be_safe(pos[-1:], "rsync --delete na datech, která nejdou vrátit")
     elif head in ("mv", "cp", "install", "ln") and len(pos) >= 2:
         # přepis cíle (existující soubor v datech) a u mv i odebrání zdroje z dat
         t_dir = next((args[j + 1] for j, a in enumerate(args) if a in ("-t", "--target-directory") and j + 1 < len(args)), None)
         dst = t_dir or pos[-1]
         srcs = pos if t_dir else pos[:-1]
-        dp = real(dst, ecwd)
+        dp = real(dst, ecwd, remote)
         if dp is not None:
-            targets = [os.path.join(dp, os.path.basename(s.rstrip("/"))) for s in srcs] if os.path.isdir(dp) else [dp]
+            targets = [os.path.join(dp, os.path.basename(x.rstrip("/"))) for x in srcs] \
+                if not remote and os.path.isdir(dp) else [dp]
             for tp in targets:
                 if protected(tp):
                     problems.append(f"zápis do nastavení Claude nebo klíčů ({tp})")
-                elif head != "ln" and not safe(tp, remote) and in_data(tp) and os.path.isfile(tp) and not remote:
-                    problems.append(f"{head} přepíše existující soubor {tp}")
+                elif head != "ln" and risky(tp, remote) and (remote or os.path.isfile(tp)):
+                    problems.append(f"{head} přepíše soubor v datech, který nejde vrátit ({tp})")
+        elif head != "ln" and need_window(dst, ecwd, remote):
+            problems.append(f"{head} do cesty s neznámou proměnnou ({dst})")
         if head == "mv":
             for s in srcs:
-                sp = real(s, ecwd)
+                sp = real(s, ecwd, remote)
                 if sp is not None and protected(sp):
                     problems.append(f"přesun nastavení Claude nebo klíčů ({sp})")
     elif head in ("sed", "perl") and any(re.match(r"^-[a-zA-Z]*i", a) or a.startswith("--in-place") for a in args):
         files = pos[1:] if head == "sed" and not any(a in ("-e", "-f") or a.startswith("--expression") for a in args) else pos
-        if head == "perl":
-            files = [a for a in pos if os.path.exists(real(a, ecwd) or "")]
+        if head == "perl":  # skript není soubor: lokálně existující cesty, vzdáleně cesty vypadající jako cesty
+            files = [a for a in pos if (re.match(r"^[~/.]", a) if remote else os.path.exists(real(a, ecwd) or ""))]
         for w in files:
-            p = real(w, ecwd)
+            p = real(w, ecwd, remote)
             if p is None:
                 continue
             if protected(p):
                 problems.append(f"úprava nastavení Claude nebo klíčů ({p})")
-            elif not safe(p, remote) and in_data(p) and not remote:
-                problems.append(f"úprava souboru na místě mimo pracovní místa ({p})")
+            elif risky(p, remote):
+                problems.append(f"úprava souboru na místě v datech, který nejde vrátit ({p})")
     elif head == "tee":
         for w in pos:
-            p = real(w, ecwd)
+            p = real(w, ecwd, remote)
             if p is None:
                 continue
             if protected(p):
                 problems.append(f"zápis do nastavení Claude nebo klíčů ({p})")
-            elif "-a" not in args and not safe(p, remote) and in_data(p) and os.path.isfile(p) and not remote:
-                problems.append(f"tee přepíše existující soubor {p}")
+            elif not any(a in ("-a", "--append") for a in args) and risky(p, remote) and (remote or os.path.isfile(p)):
+                problems.append(f"tee přepíše soubor v datech, který nejde vrátit ({p})")
     elif DISK.match(head) or (head == "dd" and any(a.startswith("of=/dev/") for a in args)) \
             or (head == "cryptsetup" and any(a in ("luksFormat", "erase", "luksErase") for a in args)):
         problems.append(f"operace s diskem, která ničí data ({head})")
     elif head == "git" and DESTR_GIT.search(" ".join(words)):
         repo = ecwd
         if "-C" in args and args.index("-C") + 1 < len(args):
-            repo = real(args[args.index("-C") + 1], ecwd) or ""
+            repo = real(args[args.index("-C") + 1], ecwd, remote) or ""
         if not (repo and (under(repo, scratch) or under(repo, "/tmp"))):
             problems.append("git: destruktivní operace (reset --hard, clean -f, branch -D, push --force, checkout --, restore)")
 
@@ -384,18 +523,10 @@ def check(words, ecwd, remote):
         for j, a in enumerate(args):
             if j and args[j - 1] == "-i" and head in ("scp", "rsync", "sftp", "ssh"):
                 continue
-            if not SECRET_OK.search(a) and any(re.search(rx, a) for rx in SECRET if _ok(rx)):
+            if is_secret(a):
                 problems.append("čtení tajného souboru (klíče, historie, tokeny)")
                 break
     return ecwd
-
-
-def _ok(rx):
-    try:
-        re.compile(rx)
-        return True
-    except re.error:
-        return False
 
 
 def run_all(c, ecwd, remote):
@@ -406,9 +537,9 @@ def run_all(c, ecwd, remote):
 try:
     run_all(cmd, cwd, False)
 except Exception:
-    sys.exit(0)
+    sys.exit(0)  # chyba skriptu: fail-open bez allow
 
 if problems:
     seen = list(dict.fromkeys(problems))
     out("ask", "Riziková akce: " + "; ".join(seen[:3]) + ".")
-sys.exit(0)
+finish()

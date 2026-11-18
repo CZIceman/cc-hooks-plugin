@@ -17,7 +17,7 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | `baze-start.sh` | `SessionStart` | připomene bázi: než se začne cokoli řešit, nejdřív `pravidla` a `hledej` (levné, možná jsme to už řešili nebo víme, co nefunguje); výsledek nejdřív předložit Markovi, do báze zapisovat až po jeho reakci, jednou za téma (od 0.10.0) |
 | `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, nejdřív výsledek a pak zápis do báze, samostatná práce bez zbytečných dotazů, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
 | `baze-precompact.sh` | `PreCompact` | těsně před zhuštěním kontextu připomene zapsat do báze to, co Marek už viděl a v bázi ještě není; ostatní má jít do shrnutí jako čekající na zápis (od 0.10.0). Neblokuje |
-| `pretool-guard.py` | `PreToolUse` | **okno oprávnění (`ask`) jen na mazání a přepis dat, čtení tajemství a změnu nastavení Claude** (od 0.8.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0) |
+| `pretool-guard.py` | `PreToolUse` | **jediný strážce: okno oprávnění (`ask`) jen na nevratnou ztrátu dat, čtení tajemství a změnu nastavení Claude, ostatní výslovně povolí (`allow`)** (od 0.11.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0) |
 | `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval) |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
 | `statusline-start.py` | `SessionStart` | od 0.9.0: nainstaluje stavovou řádku (`statusline/statusline.py`) do `~/.claude/marek-statusline/` a doplní `statusLine` do `~/.claude/settings.json` (pravidla viz „Stavová řádka“); nic nevypisuje, vždy `exit 0`; `MAREK_STATUSLINE=0` ho vypne |
@@ -124,14 +124,36 @@ za stejné období jich vrátí 12 (mazání a přepis souborů na NAS, zápis d
 `$( )`), těla heredoců přeskočí, řetězce zůstanou jedním slovem, rozbalí `sudo`, `timeout`, `env`, `xargs`, `bash -c '…'`,
 dosadí jednoduchá přiřazení (`S=…; rm $S/x`) a sleduje `cd`. Kód skriptů (`python3 -c`, heredoc) nehodnotí.
 
-Pracovní místa (mazat a přepisovat se tu smí bez dotazu): scratchpad, `/tmp`, `/var/tmp`, `/run/user/<uid>` (mimo `gvfs`),
-adresář projektu (`CLAUDE_PROJECT_DIR` i aktuální `cwd`; domovský adresář a `/` se za projekt nepovažují), `~/.cache`
-a paměť Claude (`~/.claude/projects/*/memory`). Data: domovský adresář, `/mnt`, `/media`, `/run/media`, `/srv`, gvfs.
+### Od 0.11.0: plugin jediný strážce, okno jen na nevratnou ztrátu dat (rozhodnutí Marka, 18. 11. 2026)
+
+Agenti běžící bez Marka (v noci) stáli na zbytečných oknech: mazání `__pycache__` a pomocných souborů v pracovním
+adresáři agenta v kontejneru (`pct exec 900 … rm /srv/cfd/…`), v `/dev/shm`, v `~/.claude/jobs/<id>/tmp`, `sed -i` na souboru
+v gitu. Vedle toho vyskakovala běžná okna Claude Code a projekty si ručně povolovaly příkazy v `settings.local.json`.
+Marek: „vyřešit systémově a jednou provždy“. Přepočet na 129 uložených oknech (30. 10.–18. 11. 2026): 0.10.0 by jich
+otevřela 74, 0.11.0 jich otevře 34 (vše skutečná data, klíče a nastavení: `/config/.storage` a skripty HA, NAS, Frigate,
+skripty v domově mimo git, `~/.claude/settings.json`, `~/.ssh`). Nástroj přepočtu: přehrát `tool_input` a `cwd`
+z přepisů session proti `hooks/pretool-guard.py`.
+
+- **Co není rizikové, hook výslovně povolí** (`permissionDecision: "allow"`), takže se neukáže ani běžné okno Claude Code.
+  Výjimka: `AskUserQuestion`, `ExitPlanMode`, `EnterPlanMode` (hook mlčí, ať allow neobejde dialog). Vypínač bez nové
+  verze: `MAREK_HOOK_ALLOW=off` (chování jako 0.10.0). Chyba skriptu = bez výstupu (bez allow).
+  Neověřeno: zda hook `allow` v režimu `auto` přeskočí i klasifikátor; ověřit na první session s 0.11.0.
+- **Mazání a přepis vyvolá okno jen v datovém úložišti a jen když nejde vrátit.**
+  - Vratné: `/tmp`, `/var/tmp`, `/dev/shm`, `/run/user/<uid>` (mimo `gvfs` a `doc`), scratchpad, `~/.cache`,
+    `~/.claude/jobs/*/tmp`, paměť Claude, adresář projektu (`CLAUDE_PROJECT_DIR` i `cwd`; domov a `/` ne), `__pycache__`
+    a `*.pyc` kdekoli; lokálně i soubor sledovaný v gitu a čistý (`git status --porcelain --ignored` prázdné, timeout 3 s).
+  - Datová úložiště lokálně: domov, `/home`, `/root`, `/mnt`, `/media`, `/run/media`, `/srv`, gvfs.
+  - Vzdáleně (`ssh host '…'`, `pct exec N -- …`, sleduje se `cd`): `/mnt`, `/media`, `/home`, `/srv/dev-disk-*`, `/export`,
+    `/var/lib/vz`, `/var/lib/pve`, `/etc/pve`, `/config` (HA); vratné je tam navíc `*.log`, `*.log.N` a každá cesta se
+    segmentem obsahujícím `claude` (`/root/claude`, `/config/zalohy-claude`). Jinde (např. `/srv/cfd`, `/opt`) bez okna.
+  - Proměnné: dosadí se přiřazení v příkazu a `${X:-výchozí}` (známá hodnota, jinak výchozí); neznámá proměnná rozhodne
+    podle pevného začátku cesty, bez něj okno.
+- Nově hlídá i nástroj `Read` na tajné soubory; `~/.ssh/known_hosts*` je veřejný, zápis do něj se neptá.
 
 `ask` vrací jen pro:
-- **(a) mazání mimo pracovní místa:** `rm`, `rmdir`, `unlink`, `shred`, `truncate`, `find -delete`/`-exec rm`, `xargs rm`,
-  `rsync --delete`; neznámou cílovou cestu (nedosazená proměnná) bere jako mimo. **Přepis existujícího souboru v datech**
-  mimo pracovní místa: `>`, `tee` (bez `-a`), cíl `mv`/`cp`/`install`, `sed -i`/`perl -i`. Destruktivní git (`reset --hard`,
+- **(a) nevratnou ztrátu dat:** `rm`, `rmdir`, `unlink`, `shred`, `truncate`, `find -delete`/`-exec rm`, `xargs rm`,
+  `rsync --delete` a přepis (`>`, `tee` bez `-a`, cíl `mv`/`cp`/`install`, `sed -i`/`perl -i`) v datovém úložišti, které
+  nejde vrátit (viz výše). Destruktivní git (`reset --hard`,
   `clean -f`, `branch -D`, `push --force`, `checkout --`, `restore`, `stash drop|clear`; mimo scratchpad a `/tmp`) a operace
   ničící disky (`mkfs`, `wipefs`, `parted`, `fdisk`, `dd of=/dev/…`, `cryptsetup luksFormat|erase`, `lvremove`…);
 - **(b) čtení obsahu tajných souborů** (`.bash_history`, soukromé klíče v `~/.ssh`, `.gnupg`, `.netrc`, `.env` a vzory
@@ -142,8 +164,8 @@ a paměť Claude (`~/.claude/projects/*/memory`). Data: domovský adresář, `/m
 
 **Bez dotazu:** `sudo` a systémové změny (`dnf`, `systemctl`, zápis do `/etc`, `chmod`, `mount`), `git push`, běhy modelů
 a agentů, Edit/Write mimo nastavení Claude (Claude Code je umí vrátit přes checkpoint), `AskUserQuestion`.
-Příkazy uvnitř `ssh host '…'` a `pct exec N -- …` se hodnotí jako vzdálené: pracovní místa tam jsou jen `/tmp` a `/var/tmp`,
-přepis a tajemství se tam nehodnotí.
+Příkazy uvnitř `ssh host '…'` a `pct exec N -- …` se hodnotí podle vzdálených datových úložišť (viz 0.11.0);
+tajemství se tam nehodnotí.
 
 Zahazování `AskUserQuestion` podle textu otázky a blok otázky na konci tahu (oboje 0.7.0) jsou zrušené: heuristika by
 zamítla 22 z 35 skutečných otázek, i schválení kopírování dat, které si Marek vyhradil. Kdy se ptát, určuje `pravidla.txt`.
