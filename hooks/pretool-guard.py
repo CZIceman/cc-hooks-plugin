@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse hook (marek-cc-hooks 0.11.0) — plugin je jediný strážce: rizikové ptá, ostatní výslovně povolí.
+"""PreToolUse hook (marek-cc-hooks 0.12.0) — plugin je jediný strážce: rizikové ptá, ostatní výslovně povolí.
 
 Rozhodnutí Marka 18. 11. 2026 (0.11.0): „vyřešit systémově a jednou provždy“. Agenti, kteří běží bez člověka
 (v noci), se zastavovali na zbytečných oknech: za 3 týdny 65 oken, skoro všechna zbytečná (pracovní adresář agenta
@@ -27,6 +27,8 @@ Systémové změny (sudo, dnf, systemctl, zápis do /etc), push a běhy modelů 
 Od 0.10.0 navíc brzda zápisu do báze: `zapis` v tahu, kde se pracovalo, se poprvé zamítne (nejdřív výsledek
 Markovi, pak zápis; rozhodnutí Marka 14. 11. 2026). Podrobnosti u kódu brzdy.
 Zahazování otázek AskUserQuestion podle textu (0.7.0) je zrušené: kdy se ptát, určují pravidla.
+Od 0.12.0 navíc dohled nad delegací: Agent musí běžet na pozadí a mít smlouvu (HOTOVO:, PŘI CHYBĚ:), dlouhá zpráva
+jiné session (SendMessage nad 300 znaků) také; jinak deny. Vypínač MAREK_DOHLED=off. Viz blok „dohled“ u kódu.
 
 Hodnotí se jen to, co shell skutečně spustí: příkaz se rozloží na jednoduché příkazy, těla heredoců
 se přeskočí, řetězce zůstanou jedním slovem (slovo „rm“ v echo/grep nebo v kódu Pythonu nevadí),
@@ -134,6 +136,27 @@ if not d.get("agent_id"):
                 out("deny", "Pravidlo: nejdřív výsledek předlož Markovi, do báze zapiš až po jeho reakci, jednou za téma. "
                     "V tomto tahu se pracovalo, zápis proto odlož a na konec hlášení napiš jedním řádkem, co a kam zapíšeš. "
                     "Výjimka: session běží bez Marka (naplánovaná úloha, práce pro řídící session); pak volání zopakuj, projde.")
+
+# ---------- dohled nad delegovanou prací (0.12.0): zadání musí mít smlouvu ----------
+# Agent: VŽDY run_in_background true (jakýkoli subagent_type) a prompt s „HOTOVO:“ i „PŘI CHYBĚ:“. Agent v popředí
+# drží tah šéfa a budík (CronCreate) se spouští jen při nečinnosti, zaseknutého by nikdo nehlídal (Marek 19. 11.).
+# SendMessage nad 300 znaků musí mít oba štítky, kromě zpráv začínajících [ACK] / STAV: / ODPOVĚĎ: a zpráv „main“.
+# Vypínač: MAREK_DOHLED=off.
+if os.environ.get("MAREK_DOHLED", "on").strip().lower() != "off":
+    if tool == "Agent":
+        _bg = ti.get("run_in_background")
+        _bg = _bg is True or (isinstance(_bg, str) and _bg.strip().lower() == "true")
+        _pr = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
+        if not _bg or "HOTOVO:" not in _pr or "PŘI CHYBĚ:" not in _pr:
+            out("deny", "Subagent musí běžet na pozadí (run_in_background: true) a mít smlouvu HOTOVO, ODHAD, SIGNÁL, "
+                "PŘI CHYBĚ. Agent v popředí blokuje tah a během něj se nespustí žádný budík, takže by ho nikdo nehlídal.")
+    elif tool == "SendMessage":
+        _m = ti.get("message")
+        if isinstance(_m, str) and len(_m) > 300 and str(ti.get("to", "")).lower() != "main" \
+                and not _m.lstrip().startswith(("[ACK]", "STAV:", "ODPOVĚĎ:")) \
+                and not ("HOTOVO:" in _m and "PŘI CHYBĚ:" in _m):
+            out("deny", "Zadání bez smlouvy (HOTOVO, ODHAD, SIGNÁL, PŘI CHYBĚ) – doplň je, nebo pokud jde o hlášení "
+                "či odpověď, začni zprávu STAV: nebo ODPOVĚĎ:.")
 
 # ---------- místa ----------
 def under(p, base):

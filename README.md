@@ -17,8 +17,9 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | `baze-start.sh` | `SessionStart` | připomene bázi: než se začne cokoli řešit, nejdřív `pravidla` a `hledej` (levné, možná jsme to už řešili nebo víme, co nefunguje); výsledek nejdřív předložit Markovi, do báze zapisovat až po jeho reakci, jednou za téma (od 0.10.0) |
 | `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, nejdřív výsledek a pak zápis do báze, samostatná práce bez zbytečných dotazů, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
 | `baze-precompact.sh` | `PreCompact` | těsně před zhuštěním kontextu připomene zapsat do báze to, co Marek už viděl a v bázi ještě není; ostatní má jít do shrnutí jako čekající na zápis (od 0.10.0). Neblokuje |
-| `pretool-guard.py` | `PreToolUse` | **jediný strážce: okno oprávnění (`ask`) jen na nevratnou ztrátu dat, čtení tajemství a změnu nastavení Claude, ostatní výslovně povolí (`allow`)** (od 0.11.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0) |
-| `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval) |
+| `pretool-guard.py` | `PreToolUse` | **jediný strážce: okno oprávnění (`ask`) jen na nevratnou ztrátu dat, čtení tajemství a změnu nastavení Claude, ostatní výslovně povolí (`allow`)** (od 0.11.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0); od 0.12.0 zamítne `Agent` v popředí nebo bez smlouvy a dlouhé `SendMessage` bez smlouvy (dohled, viz níže) |
+| `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval); od 0.12.0 **vždy zablokuje, když je otevřená delegace (subagent, příkaz na pozadí, zadání jiné session) a žádný naplánovaný budík** (modul `dohled.py`, vypínač `MAREK_DOHLED=off`) |
+| `dohled-start.py` | `SessionStart` | od 0.12.0: při `resume` a `compact` vypíše otevřené delegace z minula (odvozené z přepisu session), ať je šéf před pokračováním ověří |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
 | `statusline-start.py` | `SessionStart` | od 0.9.0: nainstaluje stavovou řádku (`statusline/statusline.py`) do `~/.claude/marek-statusline/` a doplní `statusLine` do `~/.claude/settings.json` (pravidla viz „Stavová řádka“); nic nevypisuje, vždy `exit 0`; `MAREK_STATUSLINE=0` ho vypne |
 
@@ -214,6 +215,81 @@ Vypnutí bez nové verze: proměnná prostředí `MAREK_ZAPIS_BRZDA=off`. Návra
 Mimo plugin musí stejné pořadí říkat profil claude.ai (chat a Cowork hooky nemají) a pravidla báze (§10, mění
 správce na serveru).
 
+### Od 0.12.0: dohled nad delegovanou prací (rozhodnutí Marka, 19. 11. 2026)
+
+**Proč.** V noci 18./19. 11. (projekt Winglet) řídící session delegovala sérii výpočtů, všech 6 variant spadlo a server od 7:11
+stál. Nikdo to nehlídal: jediná „kontrola“ byla smyčka čekající na soubor s jiným jménem, než jaké výsledek dostal. Stejná chyba
+hrozí všude, kde šéf deleguje (subagenti, agenti jiných session, procesy na pozadí): podřízený potichu stojí a nikdo se to nedozví.
+Cíl není 100 % spolehlivost, ale aby žádná delegovaná práce nestála nepozorovaně déle než 30 min (šéf ji opraví, nebo dostane
+Marek notifikaci). Návrh: `NAVRH_dohled_agentu.md` (session Winglety), schválený rozsah A + B1–B4 (B3 zúžené podle Marka); B5 (signál
+pro vnějšího hlídače) a C (ntfy, vnější hlídač) se nedělají.
+
+**Co přibylo.**
+- **A, `pravidla.txt`: sekce „Kdo deleguje, ten hlídá“.** Zadání má HOTOVO / ODHAD / SIGNÁL / PŘI CHYBĚ; každý subagent běží na pozadí;
+  budík `CronCreate` (nejvýš po 15 min) se zakládá s první otevřenou delegací a ruší po poslední; při probuzení šéf kontroluje skutečný
+  stav (u subagenta `stat` jeho výstupního souboru, beze změny déle než 15 min = stojí); nejde-li to vyřešit, píše Markovi přes
+  `PushNotification` (nativní notifikace Claude na telefon přes Remote Control; ne ntfy).
+- **B1 + B2, `stop-guard.py` + sdílený modul `hooks/dohled.py`: Stop blokuje, když je otevřená delegace a žádný budík.**
+  Kniha delegací se **nevede v souboru ani novými hooky**; Stop ji při každém volání odvodí z přepisu session (`transcript_path`).
+  Blok je vždy `decision: block`, i při `MAREK_STOP_MODE=advisory`; při `stop_hook_active` hook mlčí (žádná smyčka).
+  - *Otevřená delegace:* (a) `Agent` s `run_in_background` true (bool i řetězec `"true"`), který se opravdu spustil
+    (`toolUseResult.status == "async_launched"`); (b) `Bash` s `run_in_background` true (`toolUseResult.backgroundTaskId`);
+    (c) `SendMessage` jiné session (`recipient_kind` `session` nebo `name`, ne `main`, ne `agent`), jehož `message` obsahuje
+    `HOTOVO:` a nezačíná `[ACK]`, `STAV:` ani `ODPOVĚĎ:`.
+  - *Uzavření:* `<task-notification>` se stavem `completed`/`failed`/`killed`/`stopped` (user záznam i attachment `queued_command`),
+    mezitímní oznámení („is waiting on its own background work“, „has not reported yet“) neuzavírá; sběrné oznámení po restartu
+    („didn't finish before the previous session ended“, víc `<task-id>`, `status stopped`) uzavře všechna uvedená ID; `TaskStop` s ID
+    (i když skončí chybou „not running“, úloha už neběží); u (c) příchozí zpráva od téže session (`origin.from` nebo `origin.name` =
+    adresát) obsahující `STAV: hotovo` / `STAV: zrušeno`, nebo vlastní odchozí zpráva tomuto adresátovi začínající `STAV: zrušeno`.
+  - *Aktivní budík:* `CronCreate` recurring (výchozí true) nesmazaný `CronDelete` a mladší než 7 dní (po 7 dnech ho Claude Code
+    ruší sám), nebo one-shot nesmazaný s `nextFireAt` v budoucnosti. Interval se nekontroluje (pravidlo „nejvýš po 15 min“ je v textu
+    pravidel, ne v hooku).
+  - *Výkon:* přepis se čte po řádcích jako bajty a JSON se parsuje jen u řádků s klíčovými slovy; 377 MB přepis 0,5 s, 77 MB
+    syntetický 0,05 s; rozpočet 1 s, po jeho překročení nebo při chybě fail-open (nic se neblokuje). Nedopsaný poslední řádek se přeskočí.
+- **B3, `pretool-guard.py`: zadání musí mít smlouvu.** `Agent` (jakýkoli `subagent_type`, i volaný subagentem) musí mít
+  `run_in_background: true` **a** prompt s `HOTOVO:` i `PŘI CHYBĚ:`, jinak `deny` („Subagent musí běžet na pozadí … Agent v popředí
+  blokuje tah a během něj se nespustí žádný budík, takže by ho nikdo nehlídal“). Důvod (Marek): i krátký subagent může běžet hodiny;
+  agent v popředí drží tah šéfa a `CronCreate` se spouští jen při nečinnosti. `SendMessage` delší než 300 znaků musí obsahovat oba
+  štítky, jinak `deny` („Zadání bez smlouvy … začni zprávu STAV: nebo ODPOVĚĎ:“); výjimky: `[ACK]`, `STAV:`, `ODPOVĚĎ:` na začátku,
+  `to` = `main`, nestringová zpráva. Zbytek `pretool-guard.py` (0.11.0) beze změny.
+- **B4, `dohled-start.py` (SessionStart):** při `source` `resume` a `compact` projde přepis toutéž funkcí a vypíše „Otevřené delegace
+  z minula: … – ověř jejich stav, než budeš pokračovat.“ Při `startup`/`clear` mlčí. Budík se tu nezohledňuje (po restartu je mrtvý).
+- **Vypínač:** `MAREK_DOHLED=off` vypne vše (Stop, PreToolUse i SessionStart).
+
+**Odkud jsou ověřené tvary** (skutečné přepisy `~/.claude/projects/*/*.jsonl` z 26. 10. až 19. 11. 2026, Claude Code 2.1.327; sessions
+Winglet `1efe5b0c…`, `b406091a…`, `af1c44aa…`, `394fc24e…`, `24b4069d…`):
+- `Agent` tool_use: `input.run_in_background` je v přepisu **řetězec `"true"`** i bool; výsledek: záznam `user` s `toolUseResult`
+  `{isAsync, status: "async_launched", agentId, outputFile, …}` a textem „Async agent launched successfully … agentId: …“.
+- `Bash` tool_use s `run_in_background: true`; výsledek: `toolUseResult.backgroundTaskId` a text „Command running in background with ID: …“.
+  Příkaz, který přesáhl 120 s a Claude Code ho sám přesunul na pozadí („was moved to the background“), se **nesleduje** (v tool_use
+  není `run_in_background`).
+- `<task-notification>`: `<task-id>`, `<tool-use-id>`, `<output-file>`, `<status>`, `<summary>`, `<result>`; v přepisu jako `user` (obsah
+  řetězec, `origin.kind: task-notification`), jako `attachment` (`queued_command`, `commandMode: task-notification`) a jako
+  `queue-operation` (ten se ignoruje, je to jen fronta). Stavy v přepisech: completed, failed, killed, stopped.
+- `CronCreate`: `input {cron, prompt, recurring}`; výsledek `toolUseResult {id, humanSchedule, recurring, durable, nextFireAt}`
+  (`nextFireAt` v ms), text „Scheduled one-shot task …“ / „Scheduled recurring job … Auto-expires after 7 days“. `CronDelete`:
+  `input.id`, výsledek „Cancelled job …“. `TaskStop`: `input.task_id`.
+- `SendMessage`: `input {to, message, summary, type, recipient, recipient_kind (session|name|agent), content}`; `content` je zkrácená
+  kopie, proto se čte `message`; výsledek `toolUseResult {success, msg_id}`. Příchozí zpráva od jiné session: záznam `user` (`isMeta`)
+  nebo `attachment` s `origin {kind: "peer", from, name, fromMode, body}`; text obaluje `<cross-session-message from=… from-name=…>`.
+
+**Neověřeno / omezení.**
+- `ScheduleWakeup` se **nezohledňuje**: v žádném z přepisů na tomto stroji není jeho `tool_use` (jen ve výpisech nástrojů), tvar neznáme.
+- Zda `CronCreate` budí session spolehlivě i během dlouhé nečinnosti a při uspaném notebooku (návrh počítal s vrstvou C, která se nedělá).
+- Zda je při `resume` `transcript_path` souborem, který obsahuje i starý průběh. V přepisech se resume jeví jako pokračování téhož souboru
+  (sběrné oznámení „didn't finish before the previous session ended“ je v něm hned za restartem), ale přímo ze SessionStart hooku
+  to neověřeno; nenajde-li hook historii, mlčí.
+- Recurring budík vytvořený před restartem session se v přepisu tváří jako aktivní, i když je po restartu mrtvý (session-only);
+  Stop pak neblokuje (chyba je ve směru fail-open).
+- Delegace podřízeným v jiné session se páruje jen podle adresy/jména odesílatele: odpoví-li peer z jiné adresy než `to` (např. zadání
+  přes `uds:`, odpověď z `bridge:` bez shodného jména), delegace se neuzavře samočinně; uzavře se `STAV: zrušeno` odchozí zprávou.
+  Zprávy subagentům (`recipient_kind: agent`) se nesledují.
+- Zda hooky vidí zprávy od peerů během běžícího tahu (týká se jen `ack-guard.py`, dohled čte přepis).
+- Tvary byly ověřeny na přepisech hlavní session; přepisy subagentů (`…/subagents/agent-*.jsonl`) se nepoužívají.
+
+Testy: `python3 tests/test-dohled.py` (60 případů nad syntetickými přepisy ve výše uvedeném tvaru; Stop, SessionStart, výkon, skutečné přepisy),
+doplněné případy v `tests/test-hooks.py` (Agent, SendMessage) a `tests/test-stop.py`.
+
 ### Potvrzování zpráv od jiných agentů (od 0.7.0)
 
 Přes Remote Control (`SendMessage`/`ListAgents`) nechodí potvrzení o přečtení, odesílatel neví, zda zpráva dorazila.
@@ -239,7 +315,7 @@ topic nikdy nevypisuje, neloguje ani neukládá do repa či báze. Hook ho zapoj
 (regex s pojmenovanou skupinou `klic`); do té doby je ntfy větev vypnutá, protože tvar příchozích ntfy zpráv není znám.
 Test odeslání: `MAREK_TEST_NET=1 python3 tests/test-ack.py` (náhodný testovací topic, 12 h na serveru).
 
-Testy bez modelu: `python3 tests/test-hooks.py`, `python3 tests/test-stop.py`, `python3 tests/test-ack.py`.
+Testy bez modelu: `python3 tests/test-hooks.py`, `python3 tests/test-stop.py`, `python3 tests/test-ack.py`, `python3 tests/test-dohled.py`, `python3 tests/test-statusline-start.py`.
 
 Vrácení: obnovit verzi 0.7.0 (commit `f1d458b`), 0.6.0 (commit `e9f00ca`, dotazy jako dřív) nebo 0.5.1 (commit `af41bd2`) a marketplace.
 Nouzově odeber `PreToolUse`, `Stop` a `UserPromptSubmit` z `hooks/hooks.json`.

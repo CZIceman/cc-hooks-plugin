@@ -53,6 +53,21 @@ qcases = [
 for n, items, fin, kw, exp in qcases:
     rc, dec, _ = run(items, fin, **kw); ok = rc == 0 and dec == exp; bad += not ok
     print("OK  " if ok else "CHYBA", f"{n:32} -> {dec:5} (čekáno {exp})")
+# od 0.12.0: dohled nad delegací (podrobně tests/test-dohled.py): otevřená delegace bez budíku = vždy blok
+RES = lambda tid, tur: {"type": "user", "message": {"role": "user", "content": [{"tool_use_id": tid, "type": "tool_result", "content": "ok"}]}, "toolUseResult": tur}
+BG = [A(TU("Agent", {"description": "Výpočet", "prompt": "HOTOVO: x PŘI CHYBĚ: y", "run_in_background": True}) | {"id": "toolu_1"}),
+      RES("toolu_1", {"isAsync": True, "status": "async_launched", "agentId": "a1"})]
+NOTE = {"type": "user", "message": {"role": "user", "content": "<task-notification>\n<task-id>a1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<status>completed</status>\n<summary>x</summary>\n</task-notification>"}}
+CRON = [A(TU("CronCreate", {"cron": "*/10 * * * *", "prompt": "p", "recurring": True}) | {"id": "toolu_2"}),
+        RES("toolu_2", {"id": "c1", "recurring": True, "durable": False, "nextFireAt": 1})]
+dcases = [
+ ("dohled: otevřená delegace bez budíku", [U("x")] + BG, "block"),
+ ("dohled: s budíkem", [U("x")] + BG + CRON, "-"),
+ ("dohled: po task-notification completed", [U("x")] + BG + [NOTE], "-"),
+]
+for n, items, exp in dcases:
+    rc, dec, _ = run(items, "Zadáno."); ok = rc == 0 and dec == exp; bad += not ok
+    print("OK  " if ok else "CHYBA", f"{n:36} -> {dec:5} (čekáno {exp})")
 rc, dec, o = run(cases[0][1], "hotovo", env={"MAREK_STOP_MODE": "block"})
 print("režim block ->", dec)
 print("stop: selhalo", bad)

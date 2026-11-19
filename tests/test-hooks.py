@@ -24,7 +24,6 @@ T = [  # (popis, výsledek, očekávané)
  ("git push", pre("Bash", {"command": "git push origin master"}), "allow"),
  ("git commit", pre("Bash", {"command": "git commit -m x"}), "allow"),
  ("claude -p", pre("Bash", {"command": "claude -p 'ahoj'"}), "allow"),
- ("Agent", pre("Agent", {"prompt": "x"}), "allow"),
  ("zadej_ukol", pre("mcp__claude_ai_D_lna__zadej_ukol", {}), "allow"),
  ("Read /etc/passwd", pre("Read", {"file_path": "/etc/passwd"}), "allow"),
  ("Read ~/.ssh/id_rsa", pre("Read", {"file_path": H + "/.ssh/id_rsa"}), "ask"),
@@ -155,7 +154,7 @@ T += [
  ("pycache kdekoli lokálně", pre("Bash", {"command": f"rm -rf {H}/Dokumenty/proj/__pycache__"}), "allow"),
  ("ExitPlanMode mlčí", pre("ExitPlanMode", {"plan": "x"}), "-"),
  ("EnterPlanMode mlčí", pre("EnterPlanMode", {}), "-"),
- ("Agent: allow", pre("Agent", {"prompt": "x"}), "allow"),
+ ("Agent (od 0.12.0 na pozadí se smlouvou): allow", pre("Agent", {"prompt": "HOTOVO: x PŘI CHYBĚ: y", "run_in_background": True}), "allow"),
 ]
 # vypínač: MAREK_HOOK_ALLOW=off = chování jako do 0.10.0 (bez výstupu)
 os.environ["MAREK_HOOK_ALLOW"] = "off"
@@ -209,6 +208,31 @@ T += [("brzda: zápis po práci v tahu", zap(t_prace), "deny"),
 os.environ["MAREK_ZAPIS_BRZDA"] = "off"
 T += [("brzda: vypnutá proměnnou", pre(ZAPIS, {}, sid="s6", transcript_path=tr(U("x", "u9"), A("Bash")), agent_id=None), "allow")]
 del os.environ["MAREK_ZAPIS_BRZDA"]
+# dohled nad delegací (0.12.0): Agent jen na pozadí a se smlouvou, dlouhé zadání jiné session se smlouvou
+SM = "HOTOVO: soubor x. ODHAD: 10 min. SIGNÁL: každých 5 min. PŘI CHYBĚ: opravit a hlásit. "
+LONG = "Výpočet variant a tabulka výsledků. " * 12  # > 300 znaků
+T += [("Agent v popředí se smlouvou", pre("Agent", {"prompt": SM}), "deny"),
+      ("Agent v popředí (false) se smlouvou", pre("Agent", {"prompt": SM, "run_in_background": False}), "deny"),
+      ("Agent na pozadí bez smlouvy", pre("Agent", {"prompt": "x", "run_in_background": True}), "deny"),
+      ("Agent na pozadí jen s HOTOVO", pre("Agent", {"prompt": "HOTOVO: x", "run_in_background": True}), "deny"),
+      ("Agent na pozadí jen s PŘI CHYBĚ", pre("Agent", {"prompt": "PŘI CHYBĚ: x", "run_in_background": True}), "deny"),
+      ("Agent na pozadí se smlouvou", pre("Agent", {"prompt": SM, "run_in_background": True}), "allow"),
+      ("Agent na pozadí se smlouvou (řetězec true)", pre("Agent", {"prompt": SM, "run_in_background": "true"}), "allow"),
+      ("Agent Explore v popředí taky deny", pre("Agent", {"prompt": SM, "subagent_type": "Explore"}), "deny"),
+      ("Agent volaný subagentem se hlídá taky", pre("Agent", {"prompt": "x"}, agent_id="a1"), "deny"),
+      ("SendMessage dlouhá bez smlouvy", pre("SendMessage", {"to": "bridge:session_X", "message": LONG}), "deny"),
+      ("SendMessage dlouhá jen s HOTOVO", pre("SendMessage", {"to": "bridge:session_X", "message": LONG + "HOTOVO: x"}), "deny"),
+      ("SendMessage dlouhá se smlouvou", pre("SendMessage", {"to": "bridge:session_X", "message": LONG + SM}), "allow"),
+      ("SendMessage krátká bez smlouvy", pre("SendMessage", {"to": "bridge:session_X", "message": "Pošli stav."}), "allow"),
+      ("SendMessage [ACK] dlouhá", pre("SendMessage", {"to": "bridge:session_X", "message": "[ACK] " + LONG}), "allow"),
+      ("SendMessage STAV: dlouhá", pre("SendMessage", {"to": "bridge:session_X", "message": "STAV: " + LONG}), "allow"),
+      ("SendMessage ODPOVĚĎ: dlouhá", pre("SendMessage", {"to": "bridge:session_X", "message": "ODPOVĚĎ: " + LONG}), "allow"),
+      ("SendMessage dlouhá pro main", pre("SendMessage", {"to": "main", "message": LONG}), "allow"),
+      ("SendMessage strukturovaná zpráva", pre("SendMessage", {"to": "x", "message": {"type": "shutdown_request"}}), "allow")]
+os.environ["MAREK_DOHLED"] = "off"
+T += [("dohled vypnutý: Agent v popředí", pre("Agent", {"prompt": "x"}), "allow"),
+      ("dohled vypnutý: SendMessage dlouhá", pre("SendMessage", {"to": "bridge:session_X", "message": LONG}), "allow")]
+del os.environ["MAREK_DOHLED"]
 import shutil; shutil.rmtree(_g, ignore_errors=True)
 bad = 0
 for n, (rc, dec), exp in T:

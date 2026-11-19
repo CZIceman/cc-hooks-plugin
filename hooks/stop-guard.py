@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stop hook (marek-cc-hooks 0.10.0).
+"""Stop hook (marek-cc-hooks 0.12.0).
 
 Kontroluje poslední tah (od posledního textu uživatele):
  (a) odpověď tvrdí „hotovo/funguje/ověřeno…“, ale v tahu neproběhl žádný Bash ani test    [upozornění],
@@ -8,6 +8,9 @@ Kontroluje poslední tah (od posledního textu uživatele):
      Do 0.9.0 se (b) spouštělo po každé změně a připomínalo i zápis do báze; od 0.10.0 se do báze
      zapisuje až po Markově reakci na výsledek (pravidla.txt), proto ji Stop nepřipomíná.
  Blok otázky na konci tahu (0.7.0) je od 0.8.0 zrušený: kdy se ptát, určují pravidla (pravidla.txt).
+ (c) od 0.12.0: existuje otevřená delegace (subagent/příkaz na pozadí, zadání jiné session s „HOTOVO:“)
+     a žádný aktivní budík (CronCreate)                                                    [VŽDY blok]
+     Kniha delegací se odvozuje z přepisu, viz hooks/dohled.py. Vypínač: MAREK_DOHLED=off.
 Upozornění (a), (b): MAREK_STOP_MODE=advisory|block, výchozí advisory.
 Ochrana proti smyčce: stop_hook_active -> mlčí.
 Chyba skriptu = exit 0 bez výstupu.
@@ -28,6 +31,22 @@ if d.get("stop_hook_active"):
 tp = d.get("transcript_path")
 if not tp or not os.path.exists(tp):
     sys.exit(0)
+
+# (c) od 0.12.0: dohled nad delegovanou prací. Otevřená delegace bez naplánovaného probuzení = blok
+# (vždy block, bez ohledu na MAREK_STOP_MODE). Kniha se odvozuje z přepisu (hooks/dohled.py); chyba = bez bloku.
+dohled_msg = ""
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import dohled
+    _s = dohled.scan(tp)
+    if _s and _s["open"] and not _s["alarm"]:
+        _o = _s["open"]
+        dohled_msg = ("Dohled: máš %d otevřených delegací a žádné naplánované probuzení: %s. "
+                      "Naplánuj kontrolu (CronCreate nejvýš po 15 min), nebo delegace uzavři "
+                      "(subagent/příkaz: TaskStop; zadání jiné session: její zpráva „STAV: hotovo“, "
+                      "nebo ji zrušíš zprávou „STAV: zrušeno“)." % (len(_o), dohled.describe(_o)))
+except Exception:
+    dohled_msg = ""
 
 turn = []  # bloky asistenta od posledního textového vstupu uživatele
 try:
@@ -70,10 +89,10 @@ if any(commits(b) for b in tools) and not any(doc_touch(b) for b in tools):
     problems.append("Tah commitoval změnu a nedotkl se dokumentace projektu (README, HANDOFF, docs/). "
                     "Pravidlo: dokumentace patří do stejného commitu — nebo napiš, proč ji nebylo potřeba měnit.")
 
-if not problems:
+if not problems and not dohled_msg:
     sys.exit(0)
-msg = " ".join(problems)
-if MODE == "block":
+msg = " ".join(([dohled_msg] if dohled_msg else []) + problems)
+if MODE == "block" or dohled_msg:
     print(json.dumps({"decision": "block", "reason": msg}, ensure_ascii=False))
 else:
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": msg}}, ensure_ascii=False))
