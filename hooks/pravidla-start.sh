@@ -9,4 +9,8 @@
 set -uo pipefail
 f="$(dirname "${BASH_SOURCE[0]}")/pravidla.txt"
 [ -r "$f" ] && cat "$f"
+# Od 0.13.0: po zhuštění kontextu (source "compact") připomenout, jak navázat (Marek 20. 11. 2026).
+if grep -q '"source"[[:space:]]*:[[:space:]]*"compact"' 2>/dev/null; then
+  printf '\n[Po zhuštění kontextu] Nejdřív přečti stavový soubor práce (HANDOFF.md v projektu, je-li) a ověř běžící delegace a budíky (CronList); pak pokračuj tam, kde jsi skončil, bez dotazů. Detaily jsou v přepisu session (cesta ve shrnutí).\n'
+fi
 exit 0

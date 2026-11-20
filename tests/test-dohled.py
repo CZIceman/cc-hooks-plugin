@@ -175,6 +175,22 @@ check("resume s MAREK_DOHLED=off nevypíše nic", subprocess.run([sys.executable
       input=json.dumps({"transcript_path": tr([USER] + ag1), "source": "resume"}), env={**os.environ, "MAREK_DOHLED": "off"}).stdout.strip(), "")
 check("resume: rozbitý vstup -> nic, rc 0", (lambda r: (r.returncode, r.stdout))(subprocess.run([sys.executable, os.path.join(D, "dohled-start.py")],
       input="{špatně", capture_output=True, text=True)), (0, ""))
+# ---------- 0.13.0: navázání po zhuštění kontextu (pravidla-start.sh, baze-precompact.sh) ----------
+def sh(name, payload):
+    return subprocess.run(["bash", os.path.join(D, name)], input=payload, capture_output=True, text=True)
+r = sh("pravidla-start.sh", json.dumps({"source": "compact", "hook_event_name": "SessionStart"}))
+check("pravidla-start: compact -> pravidla + připomínka navázání", (r.returncode, "## Dlouhá práce a zhuštění kontextu" in r.stdout,
+      "[Po zhuštění kontextu]" in r.stdout), (0, True, True))
+for src in ("startup", "resume", "clear"):
+    r = sh("pravidla-start.sh", json.dumps({"source": src}))
+    check("pravidla-start: %s -> pravidla bez připomínky" % src, (r.returncode, "## Komunikace" in r.stdout,
+          "[Po zhuštění kontextu]" in r.stdout), (0, True, False))
+r = sh("pravidla-start.sh", "")
+check("pravidla-start: prázdný vstup -> pravidla, rc 0", (r.returncode, "## Komunikace" in r.stdout), (0, True))
+r = sh("baze-precompact.sh", json.dumps({"trigger": "auto"}))
+check("precompact: instrukce pro shrnutí, bez pokynu zapisovat do báze", (r.returncode, "Markovo zadání doslova" in r.stdout,
+      "budíky" in r.stdout, "čeká na zápis do báze" in r.stdout, "Zapiš teď" in r.stdout, len(r.stdout) < 10000),
+      (0, True, True, True, False, True))
 # ---------- výkon: velký přepis ----------
 filler = {"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_x", "content": "x" * 3000}]}}
 big = tr([USER] + ag1 + [filler] * 25000 + [FINAL])  # ~80 MB

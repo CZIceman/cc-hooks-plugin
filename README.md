@@ -15,8 +15,8 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | Hook | Událost | Co dělá |
 |---|---|---|
 | `baze-start.sh` | `SessionStart` | připomene bázi: než se začne cokoli řešit, nejdřív `pravidla` a `hledej` (levné, možná jsme to už řešili nebo víme, co nefunguje); výsledek nejdřív předložit Markovi, do báze zapisovat až po jeho reakci, jednou za téma (od 0.10.0) |
-| `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, nejdřív výsledek a pak zápis do báze, samostatná práce bez zbytečných dotazů, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru) |
-| `baze-precompact.sh` | `PreCompact` | těsně před zhuštěním kontextu připomene zapsat do báze to, co Marek už viděl a v bázi ještě není; ostatní má jít do shrnutí jako čekající na zápis (od 0.10.0). Neblokuje |
+| `pravidla-start.sh` | `SessionStart` | vloží do kontextu obsah `pravidla.txt` (komunikace česky, dokumentace průběžně, nevymýšlej si, hotovo až po ověření, nejdřív výsledek a pak zápis do báze, samostatná práce bez zbytečných dotazů, git, utrácení a volby, citlivé údaje, dílna); běží při startu, obnově i po zhuštění kontextu (bez matcheru); od 0.13.0 po zhuštění (`source` `compact`) přidá připomínku: přečíst stavový soubor, ověřit delegace a budíky, pokračovat bez dotazů |
+| `baze-precompact.sh` | `PreCompact` | od 0.13.0 **instrukce pro shrnutí** (stdout PreCompact čte model, který píše shrnutí): zadání Marka doslova, jeho rozhodnutí, hotovo/zbývá/další krok, běžící delegace a budíky s ID, cesta ke stavovému souboru, slepé uličky, co čeká na zápis do báze. Neblokuje (viz „Od 0.13.0“) |
 | `pretool-guard.py` | `PreToolUse` | **jediný strážce: okno oprávnění (`ask`) jen na nevratnou ztrátu dat, čtení tajemství a změnu nastavení Claude, ostatní výslovně povolí (`allow`)** (od 0.11.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0); od 0.12.0 zamítne `Agent` v popředí nebo bez smlouvy a dlouhé `SendMessage` bez smlouvy (dohled, viz níže) |
 | `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval); od 0.12.0 **vždy zablokuje, když je otevřená delegace (subagent, příkaz na pozadí, zadání jiné session) a žádný naplánovaný budík** (modul `dohled.py`, vypínač `MAREK_DOHLED=off`) |
 | `dohled-start.py` | `SessionStart` | od 0.12.0: při `resume` a `compact` vypíše otevřené delegace z minula (odvozené z přepisu session), ať je šéf před pokračováním ověří |
@@ -214,6 +214,26 @@ Vypnutí bez nové verze: proměnná prostředí `MAREK_ZAPIS_BRZDA=off`. Návra
 
 Mimo plugin musí stejné pořadí říkat profil claude.ai (chat a Cowork hooky nemají) a pravidla báze (§10, mění
 správce na serveru).
+
+### Od 0.13.0: navázání po zhuštění kontextu (rozhodnutí Marka, 20. 11. 2026)
+
+**Proč.** Marek chce zadat práci na mnoho hodin a po automatickém zhuštění (autokompakt) pokračovat tam, kde skončila.
+**Co platí bez pluginu (ověřeno 20. 11.):** Claude Code ukládá všechny zprávy do přepisu session na disk (JSONL v
+`~/.claude/projects/…`); kompakt z něj nic nemaže a shrnutí na přepis odkazuje cestou. Shrnutí samo obsahuje „Current Work“,
+„Next Step“ a pokyn pokračovat bez dotazů. Běžící subagenti a budíky (CronCreate) žijí v procesu session, kompakt je neruší
+(neověřeno měřením, plyne z toho, že kompakt session nerestartuje).
+**Co dělá plugin:**
+- **(a) `baze-precompact.sh`:** dokumentace: „`PreCompact`: your stdout becomes instructions for the compaction summary“
+  (https://code.claude.com/docs/en/hooks). Text proto říká, co musí shrnutí zachovat (zadání doslova, rozhodnutí, hotovo/zbývá/
+  další krok, delegace a budíky s ID, stavový soubor, slepé uličky, co čeká na zápis do báze). Do 0.12.0 tu bylo „zapiš teď do
+  báze“, což shrnující model udělat nemůže (nevolá nástroje).
+- **(b) `pravidla.txt`, sekce „Dlouhá práce a zhuštění kontextu“:** práce nad hodinu vede `HANDOFF.md` v kořeni projektu a
+  aktualizuje ho po každém kroku; přežije i pád session, nejen kompakt.
+- **(c) `pravidla-start.sh`:** při `source` `compact` přidá připomínku: přečíst stavový soubor, ověřit delegace a budíky
+  (CronList), pokračovat bez dotazů, detaily hledat v přepisu. Otevřené delegace vypíše `dohled-start.py` (0.12.0).
+- PostCompact hook se nepoužívá: podle dokumentace nemá vliv na výsledek kompaktu a shrnutí je v přepisu tak jako tak.
+**Testy:** `tests/test-dohled.py` (compact → připomínka; startup/resume/clear bez ní; prázdný vstup; text PreCompact bez pokynu
+k zápisu a pod limitem 10 000 znaků).
 
 ### Od 0.12.0: dohled nad delegovanou prací (rozhodnutí Marka, 19. 11. 2026)
 

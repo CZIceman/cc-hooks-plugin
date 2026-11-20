@@ -41,6 +41,10 @@
 - Před bezobslužným během (Marek odchází, noc) musí první kus práce opravdu proběhnout (ne nanečisto). Marek dostane přehled: co běží, odhad konce, co se stane při chybě, kdo koho upozorní, kde je výsledek. Slib „bude hotovo“ až po této zkoušce, jinak „běží, odhad X, riziko Y“.
 - Hlídací smyčka na pozadí není dohled: končí, padá s procesem a hlídá jen to, co do ní kdo napsal.
 
+## Dlouhá práce a zhuštění kontextu
+- Práce na déle než hodinu vede stavový soubor v kořeni projektu (`HANDOFF.md`; existuje-li, doplň ho, nezakládej druhý): Markovo zadání doslova, jeho rozhodnutí, hotovo (čím ověřeno), zbývá, přesně další krok, běžící delegace a budíky s ID. Aktualizuj ho po každém dokončeném kroku, ne až na konci.
+- Po zhuštění kontextu nejdřív přečti stavový soubor a ověř delegace a budíky (CronList), pak pokračuj tam, kde jsi skončil, bez dotazů. Chybí-li detail, hledej v přepisu session (cesta je ve shrnutí), ne u Marka.
+
 ## Git
 - V git repu je jeden commit jedna změna. Než napíšeš cokoli o stavu commitů, spusť `git status`.
 - Změnu vracej přes `git revert` nebo přímou úpravou. `git reset --hard` přes více commitů nepoužívej, zahodí i nesouvisející práci.
