@@ -127,8 +127,10 @@ chk("  přes python3 (jako v settings) rc 0", r.returncode, 0)
 hk = json.load(open(os.path.join(REPO, "hooks", "hooks.json")))["hooks"]["SessionStart"][0]["hooks"]
 chk("hooks.json: třetí hook SessionStart", (hk[2]["command"], hk[2]["timeout"]),
     ('python3 "${CLAUDE_PLUGIN_ROOT}/hooks/statusline-start.py"', 10))
-chk("hooks.json: čtvrtý hook SessionStart (od 0.12.0 dohled-start.py)", (len(hk), hk[3]["command"], hk[3]["timeout"]),
-    (4, 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/dohled-start.py"', 10))
+chk("hooks.json: čtvrtý hook SessionStart (od 0.12.0 dohled-start.py)", (hk[3]["command"], hk[3]["timeout"]),
+    ('python3 "${CLAUDE_PLUGIN_ROOT}/hooks/dohled-start.py"', 10))
+chk("hooks.json: pátý hook SessionStart (od 0.14.0 codex-start.py)", (len(hk), hk[4]["command"], hk[4]["timeout"]),
+    (5, 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/codex-start.py"', 10))
 
 print("statusline-start: selhalo", bad)
 sys.exit(1 if bad else 0)

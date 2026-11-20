@@ -20,6 +20,7 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | `pretool-guard.py` | `PreToolUse` | **jediný strážce: okno oprávnění (`ask`) jen na nevratnou ztrátu dat, čtení tajemství a změnu nastavení Claude, ostatní výslovně povolí (`allow`)** (od 0.11.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0); od 0.12.0 zamítne `Agent` v popředí nebo bez smlouvy a dlouhé `SendMessage` bez smlouvy (dohled, viz níže) |
 | `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval); od 0.12.0 **vždy zablokuje, když je otevřená delegace (subagent, příkaz na pozadí, zadání jiné session) a žádný naplánovaný budík** (modul `dohled.py`, vypínač `MAREK_DOHLED=off`) |
 | `dohled-start.py` | `SessionStart` | od 0.12.0: při `resume` a `compact` vypíše otevřené delegace z minula (odvozené z přepisu session), ať je šéf před pokračováním ověří |
+| `codex-start.py` | `SessionStart` | od 0.14.0: když je na stroji `~/.codex`, nainstaluje pravidla pro Codex (`codex/AGENTS.md` + místní doplněk) do `~/.codex/AGENTS.md`; nic nevypisuje, `MAREK_CODEX_AGENTS=0` ho vypne |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
 | `statusline-start.py` | `SessionStart` | od 0.9.0: nainstaluje stavovou řádku (`statusline/statusline.py`) do `~/.claude/marek-statusline/` a doplní `statusLine` do `~/.claude/settings.json` (pravidla viz „Stavová řádka“); nic nevypisuje, vždy `exit 0`; `MAREK_STATUSLINE=0` ho vypne |
 
@@ -214,6 +215,37 @@ Vypnutí bez nové verze: proměnná prostředí `MAREK_ZAPIS_BRZDA=off`. Návra
 
 Mimo plugin musí stejné pořadí říkat profil claude.ai (chat a Cowork hooky nemají) a pravidla báze (§10, mění
 správce na serveru).
+
+### Od 0.14.0: stejná pravidla pro Codex a ChatGPT (rozhodnutí Marka, 20. 11. 2026)
+
+**Proč.** Hlavní asistent je Claude; na jednoduché úkoly chce Marek používat i ChatGPT chat a Codex, se stejnými
+pravidly práce. Ruční `~/.codex/AGENTS.md` z 10. 10. 2026 se s pravidly Claude rozešel (ptal se před každou změnou,
+zakazoval push i běhy modelů). **Marek zvolil:** úkoly do Codexu a ChatGPT posílá on i Claude; Codex a ChatGPT mají
+bázi Second Brain se čtením i zápisem; pravidla Codexu se synchronizují automaticky z pluginu.
+
+- **`codex/AGENTS.md`:** pravidla pro Codex. Odvozená z `hooks/pravidla.txt` bez částí vázaných na Claude Code (hooky,
+  AskUserQuestion, subagenti, CronCreate, dílna) a s rolí Codexu (jednoduché úkoly; složité doporučit Claude; zadání od
+  Claude se smlouvou končí `STAV: hotovo/chyba`) a sekcí Second Brain (`kdo` = `codex-<stroj>`). **Mění se ve stejném
+  commitu s `pravidla.txt`.**
+- **`hooks/codex-start.py` (SessionStart):** když na stroji existuje `~/.codex`, zapíše do `~/.codex/AGENTS.md`
+  `codex/AGENTS.md` + místní doplněk `~/.config/marek-hooks/codex-mistni.md` (na fedoře sekce o zprávách přes ntfy
+  s tajným topicem, proto mimo veřejné repo). Zapisuje jen při změně, práva 600; soubor bez značky pluginu jednou
+  zazálohuje do `~/.codex/AGENTS.md.pred-pluginem` (další zálohy s časem). Nic nevypisuje. Vypínač `MAREK_CODEX_AGENTS=0`.
+- **`chatgpt/vlastni-pokyny.md`:** text dvou polí vlastních pokynů ChatGPT (Settings → Personalization → Custom
+  instructions), každé pod 1 500 znaků (606 a 722). ChatGPT nemá hooky, text vkládá Marek ručně po každé změně.
+- **`pravidla.txt`, sekce „Claude, Codex a ChatGPT“:** Claude Code smí jednoduchý úkol poslat do Codexu
+  (`codex exec … --dangerously-bypass-approvals-and-sandbox -o <soubor> "<zadání>" < /dev/null`, na pozadí, hlídaný jako
+  každá delegace) a výsledek sám zkontroluje.
+- **Báze v Codexu (na každém stroji jednou ručně):** `codex mcp add second-brain --url https://edge.lumatech.cz/mcp`
+  (otevře přihlášení OAuth do báze v prohlížeči) a v `~/.codex/config.toml` pod `[mcp_servers.second-brain]` řádek
+  `default_tools_approval_mode = "approve"`, jinak `codex exec` volání báze odmítne („vyžaduje schválení, které politika
+  ‚never‘ neumožňuje“). Ověřeno 20. 11. 2026 na fedoře (Codex 0.171.0): `codex exec` bez obcházení schválení zavolal
+  `pravidla` a `hledej` a vrátil správnou cestu poznámky. **Past:** `codex exec` spuštěný bez `< /dev/null` zůstal viset na
+  „Reading additional input from stdin...“.
+- **Báze v ChatGPT:** připojuje Marek v ChatGPT (vlastní konektor na `https://edge.lumatech.cz/mcp`, OAuth); postup
+  a výsledek v bázi (`hledej` ChatGPT konektor).
+- Testy: `tests/test-codex-start.py` (bez `~/.codex` nic; zápis, práva, beze změny se nepřepisuje, místní doplněk,
+  zálohy, vypínač, chyba bez výstupu, text bez prvků Claude Code a bez tajemství).
 
 ### Od 0.13.0: navázání po zhuštění kontextu (rozhodnutí Marka, 20. 11. 2026)
 

@@ -45,6 +45,11 @@
 - Práce na déle než hodinu vede stavový soubor v kořeni projektu (`HANDOFF.md`; existuje-li, doplň ho, nezakládej druhý): Markovo zadání doslova, jeho rozhodnutí, hotovo (čím ověřeno), zbývá, přesně další krok, běžící delegace a budíky s ID. Aktualizuj ho po každém dokončeném kroku, ne až na konci.
 - Po zhuštění kontextu nejdřív přečti stavový soubor a ověř delegace a budíky (CronList), pak pokračuj tam, kde jsi skončil, bez dotazů. Chybí-li detail, hledej v přepisu session (cesta je ve shrnutí), ne u Marka.
 
+## Claude, Codex a ChatGPT
+- Hlavní asistent je Claude. Codex a ChatGPT dělají jednoduché, dobře vymezené úkoly; pracují podle týchž pravidel (Codex: `~/.codex/AGENTS.md` z pluginu, ChatGPT: vlastní pokyny v jeho nastavení).
+- V Claude Code smíš jednoduchý úkol (mechanické a hromadné úpravy, přejmenování, jednoduché skripty, převody formátů, překlady) poslat do Codexu: `codex exec -C <adresář> --dangerously-bypass-approvals-and-sandbox -o <soubor s posledním hlášením> "<zadání se smlouvou>" < /dev/null` (bez `< /dev/null` čeká na vstup), na pozadí a hlídaný jako každá delegace. Výsledek před předložením zkontroluj sám (diff, test). Hesla, tokeny ani klíče do zadání nedávej.
+- Návrh, diagnostiku s nejasnou příčinou, nejasné zadání a rizikové změny dělá Claude sám.
+
 ## Git
 - V git repu je jeden commit jedna změna. Než napíšeš cokoli o stavu commitů, spusť `git status`.
 - Změnu vracej přes `git revert` nebo přímou úpravou. `git reset --hard` přes více commitů nepoužívej, zahodí i nesouvisející práci.
