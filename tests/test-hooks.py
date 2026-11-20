@@ -239,6 +239,25 @@ os.environ["MAREK_DOHLED"] = "off"
 T += [("dohled vypnutý: Agent v popředí", pre("Agent", {"prompt": "x"}), "allow"),
       ("dohled vypnutý: SendMessage dlouhá", pre("SendMessage", {"to": "bridge:session_X", "message": LONG}), "allow")]
 del os.environ["MAREK_DOHLED"]
+# 0.15.2: režim Codex (MAREK_HOOK_KLIENT=codex): PreToolUse jen deny/mlčí, PermissionRequest allow/mlčí; jen Bash
+def cx(ev, ti, tool="Bash", **kw):
+    inp = {"hook_event_name": ev, "tool_name": tool, "tool_input": ti, "session_id": "cx", "turn_id": "t", **kw}
+    r = subprocess.run([sys.executable, os.path.join(D, "pretool-guard.py")], input=json.dumps(inp), capture_output=True,
+                       text=True, env={**os.environ, "MAREK_HOOK_KLIENT": "codex"})
+    o = r.stdout.strip()
+    if not o:
+        return r.returncode, "-"
+    h = json.loads(o)["hookSpecificOutput"]
+    return r.returncode, h.get("permissionDecision") or "pr-" + h.get("decision", {}).get("behavior", "?")
+T += [("codex PRE: ls (bez rizika mlčí)", cx("PreToolUse", {"command": "ls"}, cwd=PRJ), "-"),
+      ("codex PRE: rm v datech -> deny", cx("PreToolUse", {"command": "rm ~/Dokumenty/x.pdf"}, cwd=PRJ), "deny"),
+      ("codex PRE: čtení klíče -> deny", cx("PreToolUse", {"command": "cat ~/.ssh/id_rsa"}, cwd=PRJ), "deny"),
+      ("codex PRE: rm v projektu mlčí", cx("PreToolUse", {"command": "rm -f a.txt"}, cwd=PRJ), "-"),
+      ("codex PRE: brána báze se neuplatní", cx("PreToolUse", {"command": "ls"}, cwd=PRJ, session_id="novy"), "-"),
+      ("codex PRE: MCP nástroj mlčí", cx("PreToolUse", {}, tool="mcp__second-brain__zapis"), "-"),
+      ("codex PERM: curl -> schválí", cx("PermissionRequest", {"command": "curl -s https://example.com"}, cwd=PRJ), "pr-allow"),
+      ("codex PERM: rm v datech mlčí (okno)", cx("PermissionRequest", {"command": "rm ~/Dokumenty/x.pdf"}, cwd=PRJ), "-"),
+      ("codex PERM: apply_patch mlčí (okno)", cx("PermissionRequest", {"patch": "x"}, tool="apply_patch"), "-")]
 import shutil; shutil.rmtree(_g, ignore_errors=True)
 bad = 0
 for n, (rc, dec), exp in T:

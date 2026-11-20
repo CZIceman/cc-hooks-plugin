@@ -20,7 +20,7 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | `pretool-guard.py` | `PreToolUse` | **jediný strážce: okno oprávnění (`ask`) jen na nevratnou ztrátu dat, čtení tajemství a změnu nastavení Claude, ostatní výslovně povolí (`allow`)** (od 0.11.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0); od 0.12.0 zamítne `Agent` v popředí nebo bez smlouvy a dlouhé `SendMessage` bez smlouvy (dohled, viz níže) |
 | `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval); od 0.12.0 **vždy zablokuje, když je otevřená delegace (subagent, příkaz na pozadí, zadání jiné session) a žádný naplánovaný budík** (modul `dohled.py`, vypínač `MAREK_DOHLED=off`) |
 | `dohled-start.py` | `SessionStart` | od 0.12.0: při `resume` a `compact` vypíše otevřené delegace z minula (odvozené z přepisu session), ať je šéf před pokračováním ověří |
-| `codex-start.py` | `SessionStart` | od 0.14.0: když je na stroji `~/.codex`, nainstaluje pravidla pro Codex (`codex/AGENTS.md` + místní doplněk) do `~/.codex/AGENTS.md`; nic nevypisuje, `MAREK_CODEX_AGENTS=0` ho vypne |
+| `codex-start.py` | `SessionStart` | od 0.14.0: když je na stroji `~/.codex`, nainstaluje pravidla pro Codex (`codex/AGENTS.md` + místní doplněk) do `~/.codex/AGENTS.md`, od 0.15.2 i strážce (`~/.codex/marek-hooks/pretool-guard.py` + `~/.codex/hooks.json`); nic nevypisuje, `MAREK_CODEX_AGENTS=0` ho vypne |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
 | `statusline-start.py` | `SessionStart` | od 0.9.0: nainstaluje stavovou řádku (`statusline/statusline.py`) do `~/.claude/marek-statusline/` a doplní `statusLine` do `~/.claude/settings.json` (pravidla viz „Stavová řádka“); nic nevypisuje, vždy `exit 0`; `MAREK_STATUSLINE=0` ho vypne |
 
@@ -247,6 +247,19 @@ platí dál jen v dílně.
   významné změny a u závěrů s dopadem spustí křížovou kontrolu Codexem (Astra) bez svého zdůvodnění, nálezy ověří a
   u neshody předloží Markovi oba názory. Dostupné modely: `~/.codex/models_cache.json` (20. 11. 2026 obě `gpt-6.2-astra`
   i `gpt-6-astra` odpověděly přes `codex exec -m`).
+- **Strážce i v Codexu (od 0.15.2, Marek 20. 11. 2026: „stejné chování jako u Claude“):** `codex-start.py` zkopíruje
+  `hooks/pretool-guard.py` do `~/.codex/marek-hooks/` (stálá cesta) a do `~/.codex/hooks.json` přidá `PreToolUse`
+  a `PermissionRequest` s `env MAREK_HOOK_KLIENT=codex` (cizí hooky nechá, vypínač `MAREK_CODEX_HOOKS=0` naše odebere).
+  Ověřeno na Codexu 0.171.0: payload hooku je stejný jako u Claude Code (`tool_name` `Bash`, `tool_input.command`,
+  `cwd`, `session_id`). Codex v `PreToolUse` umí jen `deny` (`allow` i `ask` hlásí „Hook failed … unsupported
+  permissionDecision“); `PermissionRequest` (žádost o běh mimo sandbox) schválí `{"decision": {"behavior": "allow"}}` bez
+  okna. Proto v Codexu: bez rizika = `PreToolUse` mlčí a žádost o povolení se schválí sama; **nevratná ztráta dat,
+  tajemství, nastavení = `deny`** s pokynem dát Markovi přesný příkaz (spustí ho sám, v Codexu `!příkaz`); jiné nástroje
+  než Bash (MCP, `apply_patch`) strážce nechává sandboxu a oknům Codexu. Brána a brzda báze ani dohled se v Codexu
+  neuplatní (jsou vázané na přepis Claude Code). **Hooky musí Marek jednou schválit:** Codex při startu ukáže „Hooks need
+  review – 2 hooks are new or changed“, volba „Trust all and continue“; neschválené hooky neběží. Delegace z Claude
+  (`codex exec`) má proto `--dangerously-bypass-hook-trust`. Živě ověřeno: `rm ~/Dokumenty/…` → „Command blocked by
+  PreToolUse hook“, `ls` a `mv` z `/tmp` projdou.
 - **Báze v Codexu (na každém stroji jednou ručně):** `codex mcp add second-brain --url https://edge.lumatech.cz/mcp`
   (otevře přihlášení OAuth do báze v prohlížeči) a v `~/.codex/config.toml` pod `[mcp_servers.second-brain]` řádek
   `default_tools_approval_mode = "approve"`, jinak `codex exec` volání báze odmítne („vyžaduje schválení, které politika

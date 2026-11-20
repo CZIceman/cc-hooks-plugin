@@ -74,5 +74,28 @@ chk("chyba zápisu: rc 0, bez výstupu", (r.returncode, r.stdout, r.stderr), (0,
 for slovo in ("AskUserQuestion", "CronCreate", "run_in_background", "ntfy.lumatech", "agents-"):
     chk("codex/AGENTS.md neobsahuje %s" % slovo, slovo in SRC, False)
 
+# 9. strážce pro Codex (0.15.2): kopie guardu + hooks.json, cizí hooky zůstanou, vypínač odebere jen naše
+import json
+h5 = tempfile.mkdtemp(); os.mkdir(os.path.join(h5, ".codex"))
+hj = os.path.join(h5, ".codex", "hooks.json")
+json.dump({"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "cizi.sh"}]}],
+                     "Stop": [{"hooks": [{"type": "command", "command": "stop.sh"}]}]}}, open(hj, "w"))
+run(h5)
+cfg = json.load(open(hj))
+cmds = lambda ev: [x["command"] for g in cfg["hooks"].get(ev, []) for x in g["hooks"]]
+guard = os.path.join(h5, ".codex", "marek-hooks", "pretool-guard.py")
+chk("kopie guardu shodná se zdrojem", rd(guard) == rd(os.path.join(REPO, "hooks", "pretool-guard.py")), True)
+chk("PreToolUse: cizí + náš", cmds("PreToolUse"), ["cizi.sh", "env MAREK_HOOK_KLIENT=codex python3 " + guard])
+chk("PermissionRequest: náš", cmds("PermissionRequest"), ["env MAREK_HOOK_KLIENT=codex python3 " + guard])
+chk("cizí Stop zůstal", cmds("Stop"), ["stop.sh"])
+m5 = os.stat(hj).st_mtime_ns; run(h5)
+chk("hooks.json beze změny se nepřepisuje", os.stat(hj).st_mtime_ns, m5)
+run(h5, {"MAREK_CODEX_HOOKS": "0"}); cfg = json.load(open(hj))
+chk("MAREK_CODEX_HOOKS=0: naše pryč, cizí zůstanou", (cmds("PreToolUse"), "PermissionRequest" in cfg["hooks"], cmds("Stop")),
+    (["cizi.sh"], False, ["stop.sh"]))
+h6 = tempfile.mkdtemp(); os.mkdir(os.path.join(h6, ".codex")); open(os.path.join(h6, ".codex", "hooks.json"), "w").write("{rozbité")
+run(h6)
+chk("rozbitý hooks.json se nepřepíše", rd(os.path.join(h6, ".codex", "hooks.json")), "{rozbité")
+
 print("codex-start: selhalo", bad)
 sys.exit(1 if bad else 0)

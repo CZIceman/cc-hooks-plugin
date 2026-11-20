@@ -42,7 +42,27 @@ import glob, json, os, re, shlex, subprocess, sys, time
 sys.excepthook = lambda *a: os._exit(0)
 
 
+# Codex (0.15.2): týž skript jako hook Codexu (`MAREK_HOOK_KLIENT=codex`, instaluje codex-start.py). Codex v PreToolUse
+# podporuje jen `deny` (allow/ask hlásí „Hook failed … unsupported permissionDecision“) a má zvláštní událost
+# PermissionRequest (žádost o běh mimo sandbox), kde `{"decision": {"behavior": "allow"}}` schválí bez okna.
+# Proto: bez rizika = PreToolUse mlčí, PermissionRequest schválí; riziko = PreToolUse deny (Codex nevratnou ztrátu
+# dat sám nespustí, příkaz dá Markovi), PermissionRequest mlčí (okno Codexu). Hlídá se jen nástroj Bash.
+CODEX = os.environ.get("MAREK_HOOK_KLIENT", "") == "codex"
+CODEX_ASK = ("Codex to sám nespustí (pravidlo: okno jen u nevratné ztráty dat, tajemství a nastavení). Napiš Markovi "
+             "jednou větou co a proč a dej mu přesný příkaz, ať ho spustí sám (v Codexu `!příkaz`). Důvod: ")
+
+
 def out(decision, reason):
+    if CODEX:
+        if EVENT == "PermissionRequest":
+            if decision == "allow":
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "PermissionRequest",
+                      "decision": {"behavior": "allow"}}}, ensure_ascii=False))
+            sys.exit(0)  # ask/deny: mlčet = okno Codexu
+        if decision == "allow":
+            sys.exit(0)  # PreToolUse v Codexu allow nepodporuje
+        reason = (CODEX_ASK + reason) if decision == "ask" else reason
+        decision = "deny"
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
           "permissionDecision": decision, "permissionDecisionReason": reason}}, ensure_ascii=False))
     sys.exit(0)
@@ -68,6 +88,9 @@ if not isinstance(d, dict):
     sys.exit(0)
 
 tool = d.get("tool_name", "")
+EVENT = d.get("hook_event_name") or "PreToolUse"
+if CODEX and tool != "Bash":
+    sys.exit(0)  # v Codexu se hlídá jen shell; MCP, úpravy souborů ap. řeší sandbox a okna Codexu
 ti = d.get("tool_input") or {}
 sid = d.get("session_id", "x")
 scratch = d.get("scratchpad_dir") or ""
@@ -84,7 +107,7 @@ for _p in (os.environ.get("CLAUDE_PROJECT_DIR") or "", cwd):
 
 # ---------- brána báze: nejdřív `pravidla` (jednou za session) ----------
 # Subagenti se nehlídají. Po 2 zamítnutích brána povolí (konektor nemusí být dostupný).
-if not d.get("agent_id"):
+if not d.get("agent_id") and not CODEX:
     st = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "marek-hooks")
     os.makedirs(st, exist_ok=True)
     f = os.path.join(st, re.sub(r"[^A-Za-z0-9_-]", "", sid) + ".baze")
@@ -142,7 +165,7 @@ if not d.get("agent_id"):
 # drží tah šéfa a budík (CronCreate) se spouští jen při nečinnosti, zaseknutého by nikdo nehlídal (Marek 19. 11.).
 # SendMessage nad 300 znaků musí mít oba štítky, kromě zpráv začínajících [ACK] / STAV: / ODPOVĚĎ: a zpráv „main“.
 # Vypínač: MAREK_DOHLED=off.
-if os.environ.get("MAREK_DOHLED", "on").strip().lower() != "off":
+if os.environ.get("MAREK_DOHLED", "on").strip().lower() != "off" and not CODEX:
     if tool == "Agent":
         _bg = ti.get("run_in_background")
         _bg = _bg is True or (isinstance(_bg, str) and _bg.strip().lower() == "true")
