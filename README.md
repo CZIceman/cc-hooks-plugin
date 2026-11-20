@@ -231,8 +231,9 @@ bázi Second Brain se čtením i zápisem; pravidla Codexu se synchronizují aut
   `codex/AGENTS.md` + místní doplněk `~/.config/marek-hooks/codex-mistni.md` (na fedoře sekce o zprávách přes ntfy
   s tajným topicem, proto mimo veřejné repo). Zapisuje jen při změně, práva 600; soubor bez značky pluginu jednou
   zazálohuje do `~/.codex/AGENTS.md.pred-pluginem` (další zálohy s časem). Nic nevypisuje. Vypínač `MAREK_CODEX_AGENTS=0`.
-- **`chatgpt/vlastni-pokyny.md`:** text dvou polí vlastních pokynů ChatGPT (Settings → Personalization → Custom
-  instructions), každé pod 1 500 znaků (606 a 722). ChatGPT nemá hooky, text vkládá Marek ručně po každé změně.
+- **`chatgpt/vlastni-pokyny.md`:** text vlastních pokynů ChatGPT (Nastavení → Personalizace → Vlastní pokyny →
+  ChatGPT: velké pole pokynů 1 091 znaků, Přezdívka, Více o vás; rozložení podle snímku 20. 11. 2026, limit délky
+  neověřen). ChatGPT nemá hooky, text vkládá Marek ručně po každé změně.
 - **`pravidla.txt`, sekce „Claude, Codex a ChatGPT“:** Claude Code smí jednoduchý úkol poslat do Codexu
   (`codex exec … --dangerously-bypass-approvals-and-sandbox -o <soubor> "<zadání>" < /dev/null`, na pozadí, hlídaný jako
   každá delegace) a výsledek sám zkontroluje.
