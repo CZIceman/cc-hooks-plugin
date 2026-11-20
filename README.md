@@ -149,7 +149,9 @@ z přepisů session proti `hooks/pretool-guard.py`.
     `/var/lib/vz`, `/var/lib/pve`, `/etc/pve`, `/config` (HA); vratné je tam navíc `*.log`, `*.log.N` a každá cesta se
     segmentem obsahujícím `claude` (`/root/claude`, `/config/zalohy-claude`). Jinde (např. `/srv/cfd`, `/opt`) bez okna.
   - Proměnné: dosadí se přiřazení v příkazu a `${X:-výchozí}` (známá hodnota, jinak výchozí); neznámá proměnná rozhodne
-    podle pevného začátku cesty, bez něj okno.
+    podle pevného začátku cesty, bez něj okno. Od 0.15.1 i proměnná smyčky `for X in SLOVA` (= společný adresář slov
+    + `*`, např. `data/*.csv`); se `$(…)` ve slovech zůstane neznámá. Důvod: Winglety 20. 11. 2026, okno „mv do cesty
+    s neznámou proměnnou ($f)“ u `for f in data/*_zatizeni.csv; do … mv data/$b.novy $f; done` v projektu.
 - Nově hlídá i nástroj `Read` na tajné soubory; `~/.ssh/known_hosts*` je veřejný, zápis do něj se neptá.
 
 `ask` vrací jen pro:

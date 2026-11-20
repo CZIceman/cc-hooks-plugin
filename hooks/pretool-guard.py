@@ -398,6 +398,19 @@ def check(words, ecwd, remote):
         k, v = words[0].split("=", 1)
         VARS[k] = expand(v)
         words = words[1:]
+    # for VAR in SLOVA (0.15.1): proměnná smyčky = společný adresář slov + „*“ (např. data/*.csv -> data/*.csv),
+    # aby `mv x $f` uvnitř smyčky šlo posoudit podle místa. Bez slov, se `$(…)`/`$` nebo `for ((…))` zůstane neznámá.
+    if words and words[0] == "for":
+        if len(words) >= 4 and re.match(r"^[A-Za-z_]\w*$", words[1]) and words[2] == "in":
+            items = [expand(w) for w in words[3:]]
+            if items and not any("$" in w or "`" in w for w in items):
+                pre = os.path.commonprefix(items) if len(items) > 1 else items[0]
+                if len(items) > 1:
+                    pre = pre[:pre.rfind("/") + 1] + "*" if "/" in pre else "*"
+                VARS[words[1]] = pre
+            else:
+                VARS.pop(words[1], None)
+        return ecwd
     if words and words[0] in ("export", "local", "declare", "readonly"):
         for w in words[1:]:
             if re.match(r"^[A-Za-z_]\w*=", w):

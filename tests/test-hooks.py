@@ -61,6 +61,12 @@ T = [  # (popis, výsledek, očekávané)
  ("rm relativně v projektu", pre("Bash", {"command": "rm -f a.txt"}, cwd=PRJ), "allow"),
  ("cd do projektu a rm", pre("Bash", {"command": f"cd {PRJ}/sub && rm -rf dodavka"}, cwd=PRJ), "allow"),
  ("rm, cwd = HOME", pre("Bash", {"command": "rm a.txt"}, cwd=H), "ask"),
+ # 0.15.1: proměnná smyčky for (Winglety 20. 11.: okno „mv do cesty s neznámou proměnnou ($f)“)
+ ("for f in data/*.csv; mv … $f v projektu", pre("Bash", {"command": "for f in data/*_zatizeni.csv; do b=$(basename $f); scp -q h:/x/$b data/$b.novy && mv data/$b.novy $f; done"}, cwd=PRJ), "allow"),
+ ("for f in ~/Dokumenty/*.pdf; rm $f", pre("Bash", {"command": "for f in ~/Dokumenty/*.pdf; do rm $f; done"}, cwd=PRJ), "ask"),
+ ("for f in a b (projekt); rm $f", pre("Bash", {"command": "for f in a.txt b.txt; do rm $f; done"}, cwd=PRJ), "allow"),
+ ("for f in /mnt/x /tmp/y; rm $f", pre("Bash", {"command": "for f in /mnt/x /tmp/y; do rm $f; done"}, cwd=PRJ), "ask"),
+ ("for f in $(ls); rm $f zůstane neznámá", pre("Bash", {"command": "for f in $(ls); do rm $f; done"}, cwd=PRJ), "ask"),
  ("rm na NAS", pre("Bash", {"command": "rm -rf /mnt/nas/data/_Vymena/test"}), "ask"),
  ("sudo rm /etc (systém, ne data)", pre("Bash", {"command": "sudo rm -f /etc/foo.conf"}), "allow"),
  ("bash -c rm", pre("Bash", {"command": "bash -c 'rm -rf ~/Hudba'"}), "ask"),
