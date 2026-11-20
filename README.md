@@ -216,27 +216,35 @@ Vypnutí bez nové verze: proměnná prostředí `MAREK_ZAPIS_BRZDA=off`. Návra
 Mimo plugin musí stejné pořadí říkat profil claude.ai (chat a Cowork hooky nemají) a pravidla báze (§10, mění
 správce na serveru).
 
-### Od 0.14.0: stejná pravidla pro Codex a ChatGPT (rozhodnutí Marka, 20. 11. 2026)
+### Od 0.14.0: stejná pravidla pro Codex a ChatGPT; od 0.15.0 rovnocenná alternativa a křížová kontrola (rozhodnutí Marka, 20. 11. 2026)
 
-**Proč.** Hlavní asistent je Claude; na jednoduché úkoly chce Marek používat i ChatGPT chat a Codex, se stejnými
-pravidly práce. Ruční `~/.codex/AGENTS.md` z 10. 10. 2026 se s pravidly Claude rozešel (ptal se před každou změnou,
+**Proč.** Hlavní asistent je Claude; ChatGPT chat a Codex chce Marek používat se stejnými pravidly práce, a to (od 0.15.0)
+nejen na jednoduché úkoly, ale jako rovnocennou alternativu se silnými modely (šetří drahé tokeny Claude) a pro
+křížovou kontrolu kódu a závěrů Claude. Ruční `~/.codex/AGENTS.md` z 10. 10. 2026 se s pravidly Claude rozešel (ptal se před každou změnou,
 zakazoval push i běhy modelů). **Marek zvolil:** úkoly do Codexu a ChatGPT posílá on i Claude; Codex a ChatGPT mají
-bázi Second Brain se čtením i zápisem; pravidla Codexu se synchronizují automaticky z pluginu.
+bázi Second Brain se čtením i zápisem; pravidla Codexu se synchronizují automaticky z pluginu. **Od 0.15.0:** je-li Marek
+u práce, přesun do Codexu, model a effort vybírá on (výběrové okno); bez Marka rozhoduje Claude sám. Křížová kontrola
+Codexem u významných změn a závěrů. Model se neváže na verzi: nejvyšší verze rodiny z `~/.codex/models_cache.json`
+(Astra na analýzu, těžkou práci a kontrolu, Sol na běžnou); effort `medium` na běžnou práci a kódování, `high` na analýzu, diagnostiku, návrh, kontrolu a kód s dopadem. Zákaz Astry
+platí dál jen v dílně.
 
 - **`codex/AGENTS.md`:** pravidla pro Codex. Odvozená z `hooks/pravidla.txt` bez částí vázaných na Claude Code (hooky,
-  AskUserQuestion, subagenti, CronCreate, dílna) a s rolí Codexu (jednoduché úkoly; složité doporučit Claude; zadání od
-  Claude se smlouvou končí `STAV: hotovo/chyba`) a sekcí Second Brain (`kdo` = `codex-<stroj>`). **Mění se ve stejném
+  AskUserQuestion, subagenti, CronCreate, dílna) a s rolí Codexu (rovnocenná alternativa pro jednoduchou i těžkou práci; zadání od
+  Claude se smlouvou končí `STAV: hotovo/chyba`; při křížové kontrole nezávislé nálezy s doklady) a sekcí Second Brain (`kdo` = `codex-<stroj>`). **Mění se ve stejném
   commitu s `pravidla.txt`.**
 - **`hooks/codex-start.py` (SessionStart):** když na stroji existuje `~/.codex`, zapíše do `~/.codex/AGENTS.md`
   `codex/AGENTS.md` + místní doplněk `~/.config/marek-hooks/codex-mistni.md` (na fedoře sekce o zprávách přes ntfy
   s tajným topicem, proto mimo veřejné repo). Zapisuje jen při změně, práva 600; soubor bez značky pluginu jednou
   zazálohuje do `~/.codex/AGENTS.md.pred-pluginem` (další zálohy s časem). Nic nevypisuje. Vypínač `MAREK_CODEX_AGENTS=0`.
 - **`chatgpt/vlastni-pokyny.md`:** text vlastních pokynů ChatGPT (Nastavení → Personalizace → Vlastní pokyny →
-  ChatGPT: velké pole pokynů 1 091 znaků, Přezdívka, Více o vás; rozložení podle snímku 20. 11. 2026, limit délky
+  ChatGPT: velké pole pokynů 1 145 znaků, Přezdívka, Více o vás 190 znaků; rozložení podle snímku 20. 11. 2026, limit délky
   neověřen). ChatGPT nemá hooky, text vkládá Marek ručně po každé změně.
-- **`pravidla.txt`, sekce „Claude, Codex a ChatGPT“:** Claude Code smí jednoduchý úkol poslat do Codexu
-  (`codex exec … --dangerously-bypass-approvals-and-sandbox -o <soubor> "<zadání>" < /dev/null`, na pozadí, hlídaný jako
-  každá delegace) a výsledek sám zkontroluje.
+- **`pravidla.txt`, sekce „Claude, Codex a ChatGPT“:** Claude Code posílá do Codexu samostatně vymezenou práci,
+  hlavně hromadnou a dlouhou; s Markem u práce po jeho volbě, bez něj sám (`codex exec … -m <model> -c model_reasoning_effort=<effort> --dangerously-bypass-approvals-and-sandbox -o <soubor>
+  "<zadání>" < /dev/null`, na pozadí, hlídaný jako každá delegace) a výsledek sám zkontroluje; před pushem nebo nasazením
+  významné změny a u závěrů s dopadem spustí křížovou kontrolu Codexem (Astra) bez svého zdůvodnění, nálezy ověří a
+  u neshody předloží Markovi oba názory. Dostupné modely: `~/.codex/models_cache.json` (20. 11. 2026 obě `gpt-6.2-astra`
+  i `gpt-6-astra` odpověděly přes `codex exec -m`).
 - **Báze v Codexu (na každém stroji jednou ručně):** `codex mcp add second-brain --url https://edge.lumatech.cz/mcp`
   (otevře přihlášení OAuth do báze v prohlížeči) a v `~/.codex/config.toml` pod `[mcp_servers.second-brain]` řádek
   `default_tools_approval_mode = "approve"`, jinak `codex exec` volání báze odmítne („vyžaduje schválení, které politika
