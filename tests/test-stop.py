@@ -69,5 +69,7 @@ for n, items, exp in dcases:
     rc, dec, _ = run(items, "Zadáno."); ok = rc == 0 and dec == exp; bad += not ok
     print("OK  " if ok else "CHYBA", f"{n:36} -> {dec:5} (čekáno {exp})")
 rc, dec, o = run(cases[0][1], "hotovo", env={"MAREK_STOP_MODE": "block"})
+bad += rc != 0 or dec != "block"
 print("režim block ->", dec)
 print("stop: selhalo", bad)
+sys.exit(1 if bad else 0)

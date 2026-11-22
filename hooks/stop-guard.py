@@ -17,6 +17,7 @@ Chyba skriptu = exit 0 bez výstupu.
 """
 import json, os, re, sys
 
+CODEX = os.environ.get("MAREK_HOOK_KLIENT") == "codex"
 MODE = os.environ.get("MAREK_STOP_MODE", "advisory")          # advisory | block
 
 try:
@@ -38,8 +39,11 @@ dohled_msg = ""
 try:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import dohled
-    _s = dohled.scan(tp)
-    if _s and _s["open"] and not _s["alarm"]:
+    _s = dohled.scan(tp, codex=CODEX)
+    if _s and _s["open"] and CODEX:
+        dohled_msg = ("Dohled: otevřené delegace: %s. Ověř stav podle ID nebo dokonči jejich hlídání, "
+                      "než ukončíš tah. V případě chyby uveď konkrétní stav." % dohled.describe(_s["open"]))
+    elif _s and _s["open"] and not _s["alarm"]:
         _o = _s["open"]
         dohled_msg = ("Dohled: máš %d otevřených delegací a žádné naplánované probuzení: %s. "
                       "Naplánuj kontrolu (CronCreate nejvýš po 15 min), nebo delegace uzavři "
@@ -48,24 +52,34 @@ try:
 except Exception:
     dohled_msg = ""
 
-turn = []  # bloky asistenta od posledního textového vstupu uživatele
-try:
-    for line in open(tp, encoding="utf-8"):
-        try:
-            r = json.loads(line)
-        except ValueError:
-            continue
-        m = r.get("message")
-        if r.get("type") == "user" and isinstance(m, dict):
-            c = m.get("content")
-            is_text = isinstance(c, str) or (isinstance(c, list) and any(
-                isinstance(b, dict) and b.get("type") in ("text", "image") for b in c))
-            if is_text:
-                turn = []
-        elif r.get("type") == "assistant" and isinstance(m, dict) and isinstance(m.get("content"), list):
-            turn += [b for b in m["content"] if isinstance(b, dict)]
-except Exception:
-    sys.exit(0)
+if CODEX:
+    import codex_transcript
+    try:
+        parsed = codex_transcript.turn(tp, d.get("turn_id"))
+    except (OSError, ValueError):
+        parsed = None
+    turn = parsed[1] if parsed else []
+    if parsed is None and not dohled_msg:
+        sys.exit(0)
+else:
+    turn = []  # bloky asistenta od posledního textového vstupu uživatele
+    try:
+        for line in open(tp, encoding="utf-8"):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            m = r.get("message")
+            if r.get("type") == "user" and isinstance(m, dict):
+                c = m.get("content")
+                is_text = isinstance(c, str) or (isinstance(c, list) and any(
+                    isinstance(b, dict) and b.get("type") in ("text", "image") for b in c))
+                if is_text:
+                    turn = []
+            elif r.get("type") == "assistant" and isinstance(m, dict) and isinstance(m.get("content"), list):
+                turn += [b for b in m["content"] if isinstance(b, dict)]
+    except Exception:
+        sys.exit(0)
 
 tools = [b for b in turn if b.get("type") == "tool_use"]
 final = d.get("last_assistant_message") or " ".join(b.get("text", "") for b in turn if b.get("type") == "text")
@@ -78,6 +92,8 @@ def commits(b): return bool(COMMIT.search(cmd(b)))
 def doc_touch(b):
     # dokument upravený nástrojem (Edit/Write) nebo zmíněný v příkazu (sed, heredoc, git add README.md)
     i = b.get("input") or {}
+    if CODEX and b.get("name") == "apply_patch":
+        return any(DOC.search(path) for path in codex_transcript.patch_paths(i.get("command") or ""))
     return bool(DOC.search(i.get("file_path", "") if b.get("name") in ("Edit", "Write") else cmd(b)))
 
 problems = []
@@ -94,6 +110,8 @@ if not problems and not dohled_msg:
 msg = " ".join(([dohled_msg] if dohled_msg else []) + problems)
 if MODE == "block" or dohled_msg:
     print(json.dumps({"decision": "block", "reason": msg}, ensure_ascii=False))
+elif CODEX:
+    print(json.dumps({"systemMessage": msg}, ensure_ascii=False))
 else:
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": msg}}, ensure_ascii=False))
 sys.exit(0)

@@ -42,14 +42,10 @@ import glob, json, os, re, shlex, subprocess, sys, time
 sys.excepthook = lambda *a: os._exit(0)
 
 
-# Codex (0.15.2): týž skript jako hook Codexu (`MAREK_HOOK_KLIENT=codex`, instaluje codex-start.py). Codex v PreToolUse
-# podporuje jen `deny` (allow/ask hlásí „Hook failed … unsupported permissionDecision“) a má zvláštní událost
-# PermissionRequest (žádost o běh mimo sandbox), kde `{"decision": {"behavior": "allow"}}` schválí bez okna.
-# Proto: bez rizika = PreToolUse mlčí, PermissionRequest schválí; riziko = PreToolUse deny (Codex nevratnou ztrátu
-# dat sám nespustí, příkaz dá Markovi), PermissionRequest mlčí (okno Codexu). Hlídá se jen nástroj Bash.
-CODEX = os.environ.get("MAREK_HOOK_KLIENT", "") == "codex"
-CODEX_ASK = ("Codex to sám nespustí (pravidlo: okno jen u nevratné ztráty dat, tajemství a nastavení). Napiš Markovi "
-             "jednou větou co a proč a dej mu přesný příkaz, ať ho spustí sám (v Codexu `!příkaz`). Důvod: ")
+# Codex: PreToolUse riziko zamítne, u bezpečné akce mlčí. PermissionRequest
+# se volá až při žádosti Codexu o povolení a schvaluje jen nerizikový Bash.
+CODEX = os.environ.get("MAREK_HOOK_KLIENT") == "codex"
+CODEX_ASK = ("Rizikovou akci Codex zastavil. Sděl Markovi důvod a nech rozhodnutí na něm. Důvod: ")
 
 
 def out(decision, reason):
@@ -89,12 +85,18 @@ if not isinstance(d, dict):
 
 tool = d.get("tool_name", "")
 EVENT = d.get("hook_event_name") or "PreToolUse"
-if CODEX and tool != "Bash":
-    sys.exit(0)  # v Codexu se hlídá jen shell; MCP, úpravy souborů ap. řeší sandbox a okna Codexu
+if CODEX and EVENT == "PermissionRequest" and tool != "Bash":
+    sys.exit(0)
 ti = d.get("tool_input") or {}
 sid = d.get("session_id", "x")
 scratch = d.get("scratchpad_dir") or ""
 home = os.path.realpath(os.path.expanduser("~"))
+if CODEX:
+    import codex_transcript
+    import fcntl
+    import stat
+    codex_home = os.path.realpath(os.path.expanduser(os.environ.get("CODEX_HOME") or home + "/.codex"))
+
 
 # Adresáře projektu = CLAUDE_PROJECT_DIR (kde session začala) a aktuální cwd (mění se po `cd`);
 # domovský adresář a "/" za projekt nepovažujeme.
@@ -105,75 +107,139 @@ for _p in (os.environ.get("CLAUDE_PROJECT_DIR") or "", cwd):
     if _rc and _rc not in ("/", home) and _rc not in projs:
         projs.append(_rc)
 
-# ---------- brána báze: nejdřív `pravidla` (jednou za session) ----------
-# Subagenti se nehlídají. Po 2 zamítnutích brána povolí (konektor nemusí být dostupný).
-if not d.get("agent_id") and not CODEX:
-    st = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "marek-hooks")
-    os.makedirs(st, exist_ok=True)
-    f = os.path.join(st, re.sub(r"[^A-Za-z0-9_-]", "", sid) + ".baze")
-    if "Second_Brain__pravidla" in tool:
-        open(f, "w").write("ok")
-    elif not os.path.exists(f):
-        free = tool in ("ToolSearch", "AskUserQuestion", "ReadNotifications") or "Second_Brain" in tool
-        if not free:
-            n = int(open(f + ".n").read() or 0) if os.path.exists(f + ".n") else 0
-            if n < 2:
-                open(f + ".n", "w").write(str(n + 1))
-                out("deny", "Pravidlo báze: než začneš cokoli řešit, zavolej `pravidla` (a `hledej`). "
-                    "Nástroje načti přes ToolSearch (dotaz „Second Brain“).")
+# ---------- brána a brzda báze ----------
+BRAIN_FREE = {"ToolSearch", "AskUserQuestion", "ReadNotifications"}
+CODEX_BRAIN_FREE = {"tool_search", "request_user_input", "list_mcp_resources",
+                   "list_mcp_resource_templates", "mcp_resource_search"}
 
-    # ---------- brzda zápisu do báze (0.10.0): nejdřív výsledek Markovi, pak `zapis` ----------
-    # V tahu, kde se pracovalo (běžel i jiný nástroj než báze), se první `zapis` zamítne. Projde, když
-    # Marek o zápis v poslední zprávě výslovně požádal, nebo při opakovaném volání v témže tahu (session
-    # bez Marka). Subagenti se nehlídají. Vypnutí: MAREK_ZAPIS_BRZDA=off. Nejde-li přepis přečíst, zápis projde.
-    if "Second_Brain__zapis" in tool and os.environ.get("MAREK_ZAPIS_BRZDA", "on") != "off":
-        turn_id, worked, asked = "", False, False
+
+def brain_tool(name):
+    return bool(codex_transcript.brain_method(name)) if CODEX else "Second_Brain" in name
+
+
+def asked_to_write(prompt):
+    return bool(re.search(r"zapi[sš]|zapsat|do b[aá]ze|v[yý]tah", prompt, re.I))
+
+
+def claude_work():
+    turn_id, worked, asked = "", False, False
+    with open(d.get("transcript_path") or "", encoding="utf-8") as transcript:
+        for n, line in enumerate(transcript):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            m = r.get("message")
+            if not isinstance(m, dict):
+                continue
+            c = m.get("content")
+            if r.get("type") == "user":
+                txt = c if isinstance(c, str) else " ".join(
+                    b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text"
+                ) if isinstance(c, list) else ""
+                if txt or (isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "image" for b in c)):
+                    turn_id, worked, asked = str(r.get("uuid") or n), False, asked_to_write(txt)
+            elif r.get("type") == "assistant" and isinstance(c, list):
+                worked |= any(isinstance(b, dict) and b.get("type") == "tool_use"
+                              and not brain_tool(b.get("name", "")) and b.get("name") not in BRAIN_FREE for b in c)
+    return turn_id, worked, asked
+
+
+def codex_work():
+    turn_id = d.get("turn_id")
+    current = codex_transcript.turn(d.get("transcript_path") or "", turn_id)
+    if current is None:
+        return turn_id, False, False
+    prompt, tools = current
+    worked = any(not brain_tool(b["name"]) and b["name"] not in CODEX_BRAIN_FREE for b in tools)
+    return turn_id, worked, asked_to_write(prompt)
+
+
+def read_state(path, default=""):
+    try:
+        with open(path, encoding="utf-8") as stream:
+            return stream.read()
+    except FileNotFoundError:
+        return default
+
+
+def write_state(path, value):
+    with open(path, "w", encoding="utf-8") as stream:
+        stream.write(value)
+
+
+def check_brain(path, rules_called, write_call, free):
+    if rules_called:
+        write_state(path, "ok")
+    elif not free and not os.path.exists(path):
+        count_path = path + ".n"
+        n = int(read_state(count_path, "0"))
+        if n < 2:
+            write_state(count_path, str(n + 1))
+            hint = ("Použij nástroje MCP serveru second-brain." if CODEX
+                    else "Nástroje načti přes ToolSearch (dotaz „Second Brain“).")
+            out("deny", "Pravidlo báze: než začneš cokoli řešit, zavolej `pravidla` (a `hledej`). " + hint)
+    if write_call and os.environ.get("MAREK_ZAPIS_BRZDA", "on") != "off":
         try:
-            for n, line in enumerate(open(d.get("transcript_path") or "", encoding="utf-8")):
-                try:
-                    r = json.loads(line)
-                except ValueError:
-                    continue
-                m = r.get("message")
-                if not isinstance(m, dict):
-                    continue
-                c = m.get("content")
-                if r.get("type") == "user":
-                    txt = c if isinstance(c, str) else " ".join(
-                        b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text") \
-                        if isinstance(c, list) else ""
-                    if txt or (isinstance(c, list) and any(isinstance(b, dict) and b.get("type") == "image" for b in c)):
-                        turn_id, worked = str(r.get("uuid") or n), False
-                        asked = bool(re.search(r"zapi[sš]|zapsat|do b[aá]ze|v[yý]tah", txt, re.I))
-                elif r.get("type") == "assistant" and isinstance(c, list):
-                    for b in c:
-                        if isinstance(b, dict) and b.get("type") == "tool_use" and "Second_Brain" not in b.get("name", "") \
-                                and b.get("name") not in ("ToolSearch", "AskUserQuestion", "ReadNotifications"):
-                            worked = True
+            turn_id, worked, asked = codex_work() if CODEX else claude_work()
         except Exception:
-            worked = False
-        if worked and not asked:
-            zf = os.path.join(st, re.sub(r"[^A-Za-z0-9_-]", "", sid) + ".zapis")
-            if (open(zf).read() if os.path.exists(zf) else None) != turn_id:
-                open(zf, "w").write(turn_id)
-                out("deny", "Pravidlo: nejdřív výsledek předlož Markovi, do báze zapiš až po jeho reakci, jednou za téma. "
-                    "V tomto tahu se pracovalo, zápis proto odlož a na konec hlášení napiš jedním řádkem, co a kam zapíšeš. "
-                    "Výjimka: session běží bez Marka (naplánovaná úloha, práce pro řídící session); pak volání zopakuj, projde.")
+            return  # nedostupný přepis: stávající výjimka
+        write_path = path.removesuffix(".baze") + ".zapis"
+        if worked and not asked and read_state(write_path, None) != turn_id:
+            write_state(write_path, turn_id)
+            out("deny", "Pravidlo: nejdřív výsledek předlož Markovi, do báze zapiš až po jeho reakci, jednou za téma. "
+                "V tomto tahu se pracovalo, zápis proto odlož a na konec hlášení napiš jedním řádkem, co a kam zapíšeš. "
+                "Výjimka: session běží bez Marka (naplánovaná úloha, práce pro řídící session); pak volání zopakuj, projde.")
+
+
+if not d.get("agent_id") and EVENT in ("PreToolUse", "PostToolUse"):
+    st = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp",
+                      f"marek-hooks-codex-{os.getuid()}" if CODEX else "marek-hooks")
+    safe_sid = re.sub(r"[^A-Za-z0-9_-]", "", sid)
+    if CODEX and safe_sid and d.get("session_id"):
+        method = codex_transcript.brain_method(tool)
+        # Bránu otevře úspěšné volání pravidel, ne samotný pokus.
+        response = d.get("tool_response")
+        rules_called = (EVENT == "PostToolUse" and method == "pravidla" and isinstance(response, dict)
+                        and ("content" in response or "structuredContent" in response) and not response.get("isError"))
+        free = bool(method) or tool in CODEX_BRAIN_FREE
+        if rules_called or EVENT == "PreToolUse" and (not free or method == "zapis"):
+            try:
+                os.makedirs(st, mode=0o700, exist_ok=True)
+                directory = os.lstat(st)
+                if stat.S_ISDIR(directory.st_mode) and directory.st_uid == os.getuid() and not directory.st_mode & 0o077:
+                    path = os.path.join(st, safe_sid + ".baze")
+                    fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+                    with os.fdopen(fd, "rb") as lock:
+                        fcntl.flock(lock, fcntl.LOCK_EX)
+                        check_brain(path, rules_called, method == "zapis", free)
+            except (OSError, ValueError):
+                pass  # Chyba stavu báze nevyřadí strážce souborů a příkazů Codexu.
+    elif not CODEX:
+        os.makedirs(st, exist_ok=True)
+        check_brain(os.path.join(st, safe_sid + ".baze"), "Second_Brain__pravidla" in tool,
+                    "Second_Brain__zapis" in tool, tool in BRAIN_FREE or brain_tool(tool))
+if EVENT == "PostToolUse":
+    sys.exit(0)
 
 # ---------- dohled nad delegovanou prací (0.12.0): zadání musí mít smlouvu ----------
 # Agent: VŽDY run_in_background true (jakýkoli subagent_type) a prompt s „HOTOVO:“ i „PŘI CHYBĚ:“. Agent v popředí
 # drží tah šéfa a budík (CronCreate) se spouští jen při nečinnosti, zaseknutého by nikdo nehlídal (Marek 19. 11.).
 # SendMessage nad 300 znaků musí mít oba štítky, kromě zpráv začínajících [ACK] / STAV: / ODPOVĚĎ: a zpráv „main“.
 # Vypínač: MAREK_DOHLED=off.
-if os.environ.get("MAREK_DOHLED", "on").strip().lower() != "off" and not CODEX:
-    if tool == "Agent":
+if os.environ.get("MAREK_DOHLED", "on").strip().lower() != "off":
+    if CODEX and tool == "spawn_agent":
+        prompt = ti.get("message") or ti.get("prompt") or ""
+        if "HOTOVO:" not in prompt or "PŘI CHYBĚ:" not in prompt:
+            out("deny", "Subagent musí dostat smlouvu HOTOVO, ODHAD, SIGNÁL, PŘI CHYBĚ.")
+    elif not CODEX and tool == "Agent":
         _bg = ti.get("run_in_background")
         _bg = _bg is True or (isinstance(_bg, str) and _bg.strip().lower() == "true")
         _pr = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
         if not _bg or "HOTOVO:" not in _pr or "PŘI CHYBĚ:" not in _pr:
             out("deny", "Subagent musí běžet na pozadí (run_in_background: true) a mít smlouvu HOTOVO, ODHAD, SIGNÁL, "
                 "PŘI CHYBĚ. Agent v popředí blokuje tah a během něj se nespustí žádný budík, takže by ho nikdo nehlídal.")
-    elif tool == "SendMessage":
+    elif not CODEX and tool == "SendMessage":
         _m = ti.get("message")
         if isinstance(_m, str) and len(_m) > 300 and str(ti.get("to", "")).lower() != "main" \
                 and not _m.lstrip().startswith(("[ACK]", "STAV:", "ODPOVĚĎ:")) \
@@ -189,6 +255,11 @@ def under(p, base):
 PROTECT = [r"^%s/\.claude/(settings[^/]*\.json|hooks|plugins)(/|$)" % re.escape(home),
            r"^%s/\.config/marek-hooks(/|$)" % re.escape(home),
            r"^/etc/claude-code(/|$)", r"/\.ssh(/|$)", r"/\.gnupg(/|$)"]
+if CODEX:
+    PROTECT.extend(r"^%s/(AGENTS(?:\.override)?\.md|auth\.json|config\.toml|hooks\.json|hooks|marek-hooks|plugins|rules)(/|$)"
+                   % re.escape(root) for root in {codex_home, home + "/.codex"})
+    PROTECT.append(r"/\.codex/(AGENTS(?:\.override)?\.md|config\.toml|hooks\.json|hooks|rules)(/|$)")
+    PROTECT.append(r"^/etc/codex(/|$)")
 # Veřejný soubor, zápis do něj (ssh přidává hostitele) se neptá.
 KNOWN_HOSTS = re.compile(r"/\.ssh/known_hosts[^/]*$")
 # Datová úložiště lokálně: domovský adresář a připojená úložiště (gvfs viz in_data).
@@ -285,6 +356,10 @@ if tool in ("Edit", "Write", "NotebookEdit"):
 
 # ---------- tajné soubory (Bash i Read): vzory ----------
 SECRET = [r"\.bash_history", r"/\.ssh/", r"\.gnupg", r"\.netrc", r"(^|/)\.env$", r"id_(rsa|ed25519|ecdsa)"]
+if CODEX:
+    SECRET.extend(r"(?:^|\s)%s/auth\.json$" % re.escape(root)
+                  for root in {codex_home, home + "/.codex"})
+    SECRET.append(r"/\.codex/auth\.json$")
 try:
     for ln in open(os.path.expanduser("~/.config/marek-hooks/tajne.txt"), encoding="utf-8"):
         ln = ln.strip()
@@ -304,6 +379,33 @@ def _ok(rx):
 
 def is_secret(a):
     return not SECRET_OK.search(a) and any(re.search(rx, a) for rx in SECRET if _ok(rx))
+
+def file_paths(path):
+    absolute = os.path.abspath(os.path.join(cwd, os.path.expanduser(path)))
+    return absolute, os.path.realpath(absolute)
+
+
+if CODEX and tool == "apply_patch":
+    for path in codex_transcript.patch_paths(ti.get("command") or ""):
+        if any(protected(value) for value in file_paths(path)):
+            out("ask", f"Změna nastavení, hooků nebo klíčů ({path}).")
+    finish()
+
+if CODEX and tool.startswith("mcp__"):
+    method = tool.rsplit("__", 1)[-1]
+    if method in ("read_file", "read_text_file", "read_multiple_files", "read_media_file", "read"):
+        paths = [ti.get("path"), ti.get("file_path")]
+        if isinstance(ti.get("paths"), list):
+            paths.extend(ti["paths"])
+        for path in paths:
+            if isinstance(path, str) and any(is_secret(p) for p in (path, *file_paths(path))):
+                out("ask", "Čtení tajného souboru (klíče, historie, tokeny).")
+    elif method in ("write_file", "edit_file", "move_file", "delete_file"):
+        for key in ("path", "file_path", "source", "destination"):
+            path = ti.get(key)
+            if isinstance(path, str) and any(protected(value) for value in file_paths(path)):
+                out("ask", "Změna nastavení, hooků nebo klíčů přes MCP.")
+    finish()
 
 if tool == "Read":
     fp = ti.get("file_path") or ""
@@ -357,6 +459,8 @@ def simple_commands(c):
     return res
 
 VARS = {"HOME": home}
+if CODEX and os.environ.get("CODEX_HOME"):
+    VARS["CODEX_HOME"] = codex_home
 
 def expand(w):
     # ${X:-výchozí} / ${X-výchozí}: známá hodnota X, jinak výchozí (např. ${XDG_RUNTIME_DIR:-/tmp})
@@ -496,6 +600,10 @@ def check(words, ecwd, remote):
                 problems.append(f"přepis souboru v datech, který nejde vrátit ({p})")
             continue
         if re.fullmatch(r"[0-9]*<+", a) and i + 1 < len(args):
+            if CODEX and not remote and a.endswith("<"):
+                path = args[i + 1]
+                if is_secret(path) or is_secret(real(path, ecwd) or ""):
+                    problems.append("čtení tajného souboru (klíče, historie, tokeny)")
             i += 2
             continue
         clean.append(a)
@@ -582,7 +690,7 @@ def check(words, ecwd, remote):
         for j, a in enumerate(args):
             if j and args[j - 1] == "-i" and head in ("scp", "rsync", "sftp", "ssh"):
                 continue
-            if is_secret(a):
+            if is_secret(a) or (CODEX and is_secret(real(a, ecwd) or "")):
                 problems.append("čtení tajného souboru (klíče, historie, tokeny)")
                 break
     return ecwd

@@ -7,6 +7,12 @@
 # je pravidla.txt; lokální ~/.claude/CLAUDE.md s týmž obsahem se nesmí držet (pravidla by
 # přišla dvakrát). Stdout se vloží do kontextu. Nikdy nesmí rozbít start session.
 set -uo pipefail
+if [[ ${MAREK_HOOK_KLIENT:-} == codex ]]; then
+  if grep -q '"source"[[:space:]]*:[[:space:]]*"compact"' 2>/dev/null; then
+    printf '%s\n' '[Po zhuštění kontextu] Přečti HANDOFF.md v projektu, je-li. Ověř stav běžících delegací podle jejich ID a pokračuj od uvedeného kroku.'
+  fi
+  exit 0
+fi
 f="$(dirname "${BASH_SOURCE[0]}")/pravidla.txt"
 [ -r "$f" ] && cat "$f"
 # Od 0.13.0: po zhuštění kontextu (source "compact") připomenout, jak navázat (Marek 20. 11. 2026).

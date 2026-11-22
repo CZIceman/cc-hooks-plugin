@@ -1,4 +1,4 @@
-<!-- Generuje plugin marek-cc-hooks (codex/AGENTS.md v repu CZIceman/cc-hooks-plugin) při startu Claude Code; neupravuj ručně, přepíše se. Místní doplněk stroje: ~/.config/marek-hooks/codex-mistni.md (připojí se na konec). -->
+<!-- Generuje plugin marek-cc-hooks (codex/AGENTS.md v repu CZIceman/cc-hooks-plugin) instalátorem nebo při startu Claude Code; místní pokyny piš do doplňku. Místní doplněk stroje: ~/.config/marek-hooks/codex-mistni.md (připojí se na konec). -->
 # Pravidla pro Codex (všechny projekty)
 
 ## Role Codexu
@@ -38,7 +38,7 @@
 
 ## Dlouhá práce a hlídání
 - Práce na déle než hodinu vede stavový soubor v kořeni projektu (`HANDOFF.md`; existuje-li, doplň ho): Markovo zadání doslova, jeho rozhodnutí, hotovo (čím ověřeno), zbývá, přesně další krok. Aktualizuj ho po každém dokončeném kroku. Po zhuštění kontextu ho nejdřív přečti a pokračuj bez dotazů.
-- Co spustíš na pozadí, hlídej podle skutečného stavu (běží proces, roste výstup), ne podle očekávaného jména souboru. Ticho je poplach: stojící nebo spadlou práci hned oprav, spusť znovu, nebo to napiš Markovi.
+- Co spustíš na pozadí, hlídej podle skutečného stavu (stav subagenta podle ID, běží proces, roste výstup), ne podle očekávaného jména souboru. Subagent dostane smlouvu HOTOVO, ODHAD, SIGNÁL, PŘI CHYBĚ. Ticho je poplach: stojící nebo spadlou práci hned oprav, spusť znovu, nebo to napiš Markovi. Při obnově zkontroluj dříve otevřené delegace podle ID.
 
 ## Git
 - V git repu je jeden commit jedna změna. Než napíšeš cokoli o stavu commitů, spusť `git status`.

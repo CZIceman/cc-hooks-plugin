@@ -78,14 +78,54 @@ def _short(s, n=70):
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
-def scan(path, now=None, budget=1.0):
+def scan(path, now=None, budget=1.0, *, codex=False):
     """Vrátí {"open": [{kind, desc, id}], "alarm": bool} nebo None (chyba, vypnuto, překročený rozpočet)."""
     if disabled() or not path or not os.path.exists(path):
         return None
     try:
+        if codex:
+            return _scan_codex(path, budget)
         return _scan(path, time.time() if now is None else now, budget)
     except Exception:
         return None
+
+
+def _scan_codex(path, budget):
+    from codex_transcript import records
+    agents = {}
+    commands = {}
+    active = ("pending_init", "running")
+    for kind, event in records(path, budget):
+        if kind != "event_msg":
+            continue
+        name = event.get("type")
+        if name in ("collab_agent_spawn_end", "collab_resume_end", "collab_agent_interaction_end"):
+            agent = event.get("new_thread_id") or event.get("receiver_thread_id")
+            if agent and event.get("status") in active:
+                desc = event.get("new_agent_nickname") or event.get("receiver_agent_nickname") or "subagent"
+                agents[agent] = {"kind": "agent", "desc": _short(desc), "id": agent}
+            elif agent:
+                agents.pop(agent, None)
+        elif name == "collab_waiting_end":
+            for agent, status in (event.get("statuses") or {}).items():
+                if status not in active:
+                    agents.pop(agent, None)
+        elif name == "collab_close_end":
+            if event.get("status") not in active:
+                agents.pop(event.get("receiver_thread_id"), None)
+        elif name == "sub_agent_activity" and event.get("agent_thread_id"):
+            agent = event["agent_thread_id"]
+            if event.get("kind") in ("started", "interacted"):
+                desc = _short(event.get("agent_path") or "subagent")
+                agents[agent] = {"kind": "agent", "desc": desc, "id": agent}
+            elif event.get("kind") in ("interrupted", "completed"):
+                agents.pop(agent, None)
+        elif name == "exec_command_begin" and event.get("process_id") and event.get("call_id"):
+            call_id = event["call_id"]
+            commands[call_id] = {"kind": "bash", "desc": "příkaz na pozadí", "id": str(event["process_id"])}
+        elif name == "exec_command_end":
+            commands.pop(event.get("call_id"), None)
+    return {"open": [*agents.values(), *commands.values()], "alarm": False}
 
 
 def _scan(path, now, budget):

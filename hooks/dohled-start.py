@@ -15,8 +15,12 @@ try:
         sys.exit(0)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import dohled
-    s = dohled.scan(d.get("transcript_path"))
-    if s and s["open"]:
+    codex = os.environ.get("MAREK_HOOK_KLIENT") == "codex"
+    s = dohled.scan(d.get("transcript_path"), codex=codex)
+    if s and s["open"] and codex:
+        print("Otevřené delegace z minula: %s. Ověř stav podle ID; u subagenta použij jeho stav, "
+              "u příkazu ověř běh procesu a výsledek. Vyřeš chyby a pokračuj." % dohled.describe(s["open"]))
+    elif s and s["open"]:
         print("Otevřené delegace z minula: %s – ověř jejich stav (běží proces, čerstvý výstup, zpráva od "
               "podřízeného), než budeš pokračovat. Neběží-li, uzavři je (TaskStop) a zadej práci znovu; "
               "při běhu naplánuj kontrolu (CronCreate nejvýš po 15 min)." % dohled.describe(s["open"]))
