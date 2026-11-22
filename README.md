@@ -20,7 +20,6 @@ a `~/.claude/CLAUDE.md` se přes účet nesynchronizuje, proto jdou pravidla hoo
 | `pretool-guard.py` | `PreToolUse` | **jediný strážce: okno oprávnění (`ask`) jen na nevratnou ztrátu dat, čtení tajemství a změnu nastavení Claude, ostatní výslovně povolí (`allow`)** (od 0.11.0, viz níže), brána báze a brzda zápisu do báze (od 0.10.0); od 0.12.0 zamítne `Agent` v popředí nebo bez smlouvy a dlouhé `SendMessage` bez smlouvy (dohled, viz níže) |
 | `stop-guard.py` | `Stop` | po odpovědi upozorní na „hotovo“ bez příkazu/testu a na `git commit` bez dotčené dokumentace projektu (od 0.10.0; `MAREK_STOP_MODE=block` by blokoval); od 0.12.0 **vždy zablokuje, když je otevřená delegace (subagent, příkaz na pozadí, zadání jiné session) a žádný naplánovaný budík** (modul `dohled.py`, vypínač `MAREK_DOHLED=off`) |
 | `dohled-start.py` | `SessionStart` | od 0.12.0: při `resume` a `compact` vypíše otevřené delegace z minula (odvozené z přepisu session), ať je šéf před pokračováním ověří |
-| `codex-start.py` | `SessionStart` | na stroji s adresářem Codexu aktualizuje jeho pokyny a hooky. Samostatný běh a vypínače viz [Codex](#codex-0160) |
 | `ack-guard.py` | `UserPromptSubmit` | od 0.7.0: pozná zprávu od jiného agenta a agentovi vloží pokyn odpovědět odesílateli `[ACK] Přijato HH:MM`; nepotvrzuje potvrzení (bez smyčky); formát příchozí zprávy je zatím předpoklad (viz níže) |
 | `statusline-start.py` | `SessionStart` | od 0.9.0: nainstaluje stavovou řádku (`statusline/statusline.py`) do `~/.claude/marek-statusline/` a doplní `statusLine` do `~/.claude/settings.json` (pravidla viz „Stavová řádka“); nic nevypisuje, vždy `exit 0`; `MAREK_STATUSLINE=0` ho vypne |
 
@@ -235,8 +234,8 @@ platí dál jen v dílně.
   AskUserQuestion, subagenti, CronCreate, dílna) a s rolí Codexu (rovnocenná alternativa pro jednoduchou i těžkou práci; zadání od
   Claude se smlouvou končí `STAV: hotovo/chyba`; při křížové kontrole nezávislé nálezy s doklady) a sekcí Second Brain (`kdo` = `codex-<stroj>`). **Mění se ve stejném
   commitu s `pravidla.txt`.**
-- **`hooks/codex-start.py` (SessionStart):** začal nasazovat pokyny Codexu společně s místním doplňkem.
-  Aktuální instalace a zálohy jsou popsané v sekci [Codex](#codex-0160).
+- **Rozvoz do Codexu:** 0.14.0–0.16.1 zapisoval plugin pro Claude (`hooks/codex-start.py`) do `~/.codex`. Od 0.17.0 je
+  repo zároveň nativní plugin Codexu, viz sekce [Codex](#codex-od-0170-nativní-plugin).
 - **`chatgpt/vlastni-pokyny.md`:** text vlastních pokynů ChatGPT (Nastavení → Personalizace → Vlastní pokyny →
   ChatGPT: velké pole pokynů 1 145 znaků, Přezdívka, Více o vás 190 znaků; rozložení podle snímku 20. 11. 2026, limit délky
   neověřen). ChatGPT nemá hooky, text vkládá Marek ručně po každé změně.
@@ -246,7 +245,7 @@ platí dál jen v dílně.
   významné změny a u závěrů s dopadem spustí křížovou kontrolu Codexem (Astra) bez svého zdůvodnění, nálezy ověří a
   u neshody předloží Markovi oba názory. Dostupné modely: `~/.codex/models_cache.json` (20. 11. 2026 obě `gpt-6.2-astra`
   i `gpt-6-astra` odpověděly přes `codex exec -m`).
-- **Strážce také v Codexu (od 0.15.2):** původně jen pro Bash. Aktuální instalace a pokrytí jsou v sekci [Codex](#codex-0160).
+- **Strážce také v Codexu (od 0.15.2):** původně jen pro Bash. Aktuální instalace a pokrytí jsou v sekci [Codex](#codex-od-0170-nativní-plugin).
 - **Báze v Codexu (na každém stroji jednou ručně):** `codex mcp add second-brain --url https://edge.lumatech.cz/mcp`
   (otevře přihlášení OAuth do báze v prohlížeči) a v `~/.codex/config.toml` pod `[mcp_servers.second-brain]` řádek
   `default_tools_approval_mode = "approve"`, jinak `codex exec` volání báze odmítne („vyžaduje schválení, které politika
@@ -255,8 +254,7 @@ platí dál jen v dílně.
   „Reading additional input from stdin...“.
 - **Báze v ChatGPT:** připojuje Marek v ChatGPT (vlastní konektor na `https://edge.lumatech.cz/mcp`, OAuth); postup
   a výsledek v bázi (`hledej` ChatGPT konektor).
-- Testy: `tests/test-codex-start.py` (bez `~/.codex` nic; zápis, práva, beze změny se nepřepisuje, místní doplněk,
-  zálohy, vypínač, chyba bez výstupu, text bez prvků Claude Code a bez tajemství).
+- Testy: `tests/test-codex-parita.py` (manifest a hooky pluginu Codexu, úklid staré instalace, pravidla při startu, strážce, brána a brzda, Stop, dohled, ACK).
 
 ### Od 0.13.0: navázání po zhuštění kontextu (rozhodnutí Marka, 20. 11. 2026)
 
@@ -383,30 +381,47 @@ Testy bez modelu: `python3 tests/test-hooks.py`, `python3 tests/test-stop.py`, `
 Vrácení: obnovit verzi 0.7.0 (commit `f1d458b`), 0.6.0 (commit `e9f00ca`, dotazy jako dřív) nebo 0.5.1 (commit `af41bd2`) a marketplace.
 Nouzově odeber `PreToolUse`, `Stop` a `UserPromptSubmit` z `hooks/hooks.json`.
 
-## Codex (0.16.0)
+## Codex (od 0.17.0: nativní plugin)
 
-V kořeni aktuální verze repozitáře spusť:
+**Proč (Marek, 22. 11. 2026):** Codex má být samostatný, nezávislý na Claude Code a sám se aktualizovat.
+0.14.0–0.16.1 instaloval pravidla a hooky do `~/.codex` plugin pro Claude (SessionStart `codex-start.py`,
+nebo ručně `--install` z klonu repa); bez běžícího Claude Code se Codex neaktualizoval.
+
+**Jak:** Codex 0.171.0 umí pluginy z Git marketplace i s hooky (zdroj `codex-rs/core-plugins/src/manifest.rs`,
+pole `hooks`) a marketplace z Gitu při každém startu na pozadí sám aktualizuje (`manager.rs`,
+`plugins-marketplace-auto-upgrade`, `PluginGitMode::Automatic`). Manifest hledá v pořadí `.codex-plugin/plugin.json`,
+`.claude-plugin/plugin.json` (`exec-server-protocol/src/protocol.rs`), marketplace čte i z `.claude-plugin/marketplace.json`.
+Repo je proto plugin pro oba klienty: Claude čte `.claude-plugin/plugin.json` a `hooks/hooks.json`, Codex
+`.codex-plugin/plugin.json` a `hooks/codex-hooks.json`. Skripty jsou společné, Codex je spouští s `MAREK_HOOK_KLIENT=codex`
+přes `${PLUGIN_ROOT}` (Codex ho nastavuje hookům pluginu, `hooks/src/engine/discovery.rs`). Verze v obou manifestech je stejná.
+
+**Instalace (na každém stroji jednou, bez Claude Code):**
 
 ```sh
-python3 hooks/codex-start.py --install
+codex plugin marketplace add CZIceman/cc-hooks-plugin
+codex plugin add marek-cc-hooks@marek-hooks
 ```
 
-Příkaz funguje bez Claude Code. Na dalších strojích jde o stejný krok a při vydání
-nové verze ho zopakuj z aktualizovaného repozitáře. Na strojích s aktuálním pluginem
-umí totéž jeho SessionStart. Starší verze 0.15.2 stále zapisuje starý strážce,
-proto před společným používáním aktualizuj i Claude plugin. Balíček Codex není
-závislý na marketplace. Používá soubory v `CODEX_HOME` (výchozí `~/.codex`) a
-načítá místní doplněk z `~/.config/marek-hooks/codex-mistni.md`.
+Pak nová relace Codexu: schválit hooky pluginu (okno „Hooks need review“ → „Trust all and continue“, nebo `/hooks`);
+neschválené hooky neběží. Další verze stáhne Codex sám při startu; změněné hooky chtějí nové schválení.
+Ruční aktualizace: `codex plugin marketplace upgrade marek-hooks`. Báze Second Brain se v Codexu připojuje zvlášť (viz výše).
 
-Instalátor zálohuje ruční `AGENTS.md` bez značky pluginu. Při prvním přepisu souboru
-`hooks.json` s cizí konfigurací uloží jeho původní obsah do `hooks.json.pred-pluginem`.
-Cizí záznamy zachovává i ve smíšené skupině. Spravované `AGENTS.md` a skripty
-v `marek-hooks/` při aktualizaci zálohu nepotřebují.
-`config.toml` ponechává. Načti novou relaci, otevři `/hooks` a schval
-nové nebo změněné definice. Pokyny Codex načte z `AGENTS.md`; na přítomnost
-globálního `AGENTS.override.md` se vztahuje přednost Codexu. `MAREK_CODEX_AGENTS=0`
-přeskočí instalaci pokynů a `MAREK_CODEX_HOOKS=0` odregistruje vlastní hooky.
-Připojení MCP Second Brain se nastavuje samostatně, viz výše.
+**Pravidla** vkládá hook `pravidla-start.sh` při každém startu: `codex/AGENTS.md` (bez řádku s komentářem) + místní
+doplněk `~/.config/marek-hooks/codex-mistni.md`. Do `~/.codex/AGENTS.md` se nic nezapisuje; vlastní ruční pokyny
+v něm zůstanou a Codex je načte vedle pravidel pluginu.
+
+**Úklid staré instalace (`hooks/codex-uklid.py`, SessionStart):** z `~/.codex/hooks.json` odebere jen naše záznamy
+`env MAREK_HOOK_KLIENT=codex … <CODEX_HOME>/marek-hooks/…` (cizí zůstanou), smaže `~/.codex/AGENTS.md` se značkou
+„Generuje plugin marek-cc-hooks“ (ruční soubor zůstane) a adresář `~/.codex/marek-hooks/`, ten až při dalším startu:
+Codex načte `hooks.json` před hooky, takže v první relaci staré záznamy ještě běží (vedle nových) a jejich skripty
+musí existovat. Ověřeno živě 22. 11. 2026 (Codex 0.171.0, izolovaný `CODEX_HOME`): první relace staré záznamy a
+`AGENTS.md` odebrala (Codex ohlásil „The previously provided AGENTS.md instructions no longer apply“), druhá smazala
+`marek-hooks/`; všechny tři hooky SessionStart `Completed`, v kontextu připomínka báze i pravidla, `rm ~/Dokumenty/…`
+zamítnut s příkazem `!rm …` pro Marka. Claude plugin do `~/.codex` od 0.17.0 nesahá. Starší běžící session Claude
+(do 0.16.1) ale při zhuštění kontextu starou instalaci znovu zapíšou; další start Codexu ji zase uklidí.
+
+**Past:** výstup hooku SessionStart, který začíná `[` (nebo `{`), bere Codex jako JSON; když JSON není, hook skončí
+„Failed“ a text se do kontextu nedostane. `baze-start.sh` proto v Codexu začíná `# Znalostní báze Second Brain`.
 
 | Kdy | Chování Codexu |
 |---|---|
@@ -425,6 +440,12 @@ samostatný řádek `</codex-peer>`. Hook vloží pokyn k potvrzení `[ACK]` s I
 zprávy. Odeslání přes `codex queue` patří jen do výslovně povolené komunikace.
 Tvrzený odesílatel v obalu sám neověřuje identitu. Zprávy přes ntfy se řídí místními
 pravidly dané relace.
+
+### 0.17.0
+
+- Nativní plugin Codexu (`.codex-plugin/plugin.json`, `hooks/codex-hooks.json`), aktualizace z GitHubu sama.
+- `hooks/codex-start.py` a `tests/test-codex-start.py` odebrány, Claude plugin do `~/.codex` nesahá; nový `hooks/codex-uklid.py`.
+- Pravidla Codexu vkládá `pravidla-start.sh`; `baze-start.sh` v Codexu bez úvodní `[`.
 
 Před nasazením projdi stávající testy v `tests/` a `python3 tests/test-codex-parita.py`.
 Pro izolované živé ověření důvěry použij `codex exec --dangerously-bypass-hook-trust … < /dev/null`

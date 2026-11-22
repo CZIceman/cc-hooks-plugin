@@ -8,8 +8,10 @@
 #
 # Zmiňuje JEN bázi (žádné repo ani projekt). Nikdy nesmí rozbít start session.
 set -uo pipefail
+# Codex 0.171.0 bere výstup SessionStart začínající „[“ jako JSON a hook označí „Failed“ (text se do kontextu
+# nedostane, ověřeno živě 22. 11. 2026); proto v Codexu nadpis bez hranatých závorek.
+if [[ ${MAREK_HOOK_KLIENT:-} == codex ]]; then echo '# Znalostní báze Second Brain'; else echo '[Znalostní báze Second Brain]'; fi
 cat <<'TEXT'
-[Znalostní báze Second Brain]
 Máme sdílenou znalostní bázi Second Brain (konektor MCP). Než začneš řešit problém nebo cokoli hledat,
 zavolej `pravidla` (jednou za session) a `hledej` (1–3 klíčová slova). Je to levné a často to ušetří
 práci: možná jsme to už řešili, nebo víme, co nefunguje. Výsledek nejdřív předlož Markovi; do báze (`zapis`)

@@ -6,8 +6,9 @@ commitu s `hooks/pravidla.txt` a `codex/AGENTS.md` (README, „Od 0.14.0“). Ro
 snímku z desktopové aplikace 20. 11. 2026: velké pole pokynů, Přezdívka, Povolání, Více o vás. Limit délky
 polí neověřen.
 
-Řádek „AGENTS.md“ ve stejném nastavení neupravovat: `~/.codex/AGENTS.md` spravuje plugin a ruční změnu přepíše.
-Řádek „Codex“ platí jen pro Codex Cloud (místní Codex čte `~/.codex/AGENTS.md`).
+Do řádku „AGENTS.md“ ve stejném nastavení pravidla Codexu nevkládat: od 0.17.0 je vkládá plugin marek-cc-hooks
+nainstalovaný v Codexu (README, „Codex“), v `~/.codex/AGENTS.md` by byla podruhé.
+Řádek „Codex“ platí jen pro Codex Cloud (místní Codex dostává pravidla z pluginu).
 
 ## Velké pole (pokyny)
 

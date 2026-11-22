@@ -3,9 +3,9 @@
 
 from concurrent.futures import ThreadPoolExecutor
 import json
+import shlex
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -62,76 +62,80 @@ class CodexHooks(unittest.TestCase):
         return ("response_item", {"type": "function_call", "name": name,
                                   "arguments": json.dumps(arguments)})
 
-    def test_instalace_a_opakovani(self):
+    def uklid(self):
+        subprocess.run([sys.executable, HOOKS / "codex-uklid.py"], env=self.env, input="{}", text=True,
+                       capture_output=True, check=True)
+
+    def test_manifest_pluginu_codexu(self):
+        manifest = json.loads((HOOKS.parent / ".codex-plugin/plugin.json").read_text())
+        claude = json.loads((HOOKS.parent / ".claude-plugin/plugin.json").read_text())
+        self.assertEqual((manifest["name"], manifest["version"]), (claude["name"], claude["version"]))
+        self.assertEqual(manifest["hooks"], "./hooks/codex-hooks.json")
+        events = json.loads((HOOKS / "codex-hooks.json").read_text())["hooks"]
+        self.assertEqual(set(events), {"SessionStart", "PreToolUse", "PermissionRequest", "PostToolUse",
+                                       "Stop", "UserPromptSubmit"})
+        for groups in events.values():
+            for group in groups:
+                for handler in group["hooks"]:
+                    words = handler["command"].split()
+                    self.assertEqual(words[:2], ["env", "MAREK_HOOK_KLIENT=codex"])
+                    script = words[3].strip('"').replace("${PLUGIN_ROOT}", str(HOOKS.parent))
+                    self.assertTrue(Path(script).is_file(), script)
+        claude_hooks = (HOOKS / "hooks.json").read_text()
+        self.assertNotIn("codex", claude_hooks)
+
+    def test_uklid_stare_instalace(self):
         self.codex.mkdir()
-        legacy = f'env MAREK_HOOK_KLIENT=codex python3 "{self.codex / "marek-hooks/pretool-guard.py"}"'
-        group = {"matcher": "Bash", "hooks": [
-            {"type": "command", "command": legacy}, {"type": "command", "command": "cizi prikaz"}]}
-        existing = json.dumps({"hooks": {"PreToolUse": [group], "SessionEnd": []}})
+        scripts = self.codex / "marek-hooks"
+        scripts.mkdir()
+        (scripts / "pretool-guard.py").write_text("# stará kopie\n")
+        old = shlex.join(["env", "MAREK_HOOK_KLIENT=codex", "python3", str(scripts / "pretool-guard.py")])
+        old_quoted = f'env MAREK_HOOK_KLIENT=codex bash "{scripts / "baze-start.sh"}"'
+        foreign = {"type": "command", "command": "cizi prikaz"}
         hooks = self.codex / "hooks.json"
-        hooks.write_text(existing)
-        config = self.codex / "config.toml"
-        config.write_text('[tui]\nstatus_line = ["git-branch"]\n')
-        previous = config.read_bytes()
-        local = self.root / ".config/marek-hooks"
-        local.mkdir(parents=True)
-        (local / "codex-mistni.md").write_text("Místní doplněk testu\n")
-        command = [sys.executable, HOOKS / "codex-start.py", "--install"]
-        subprocess.run(command, env=self.env, capture_output=True, check=True)
-        installed = json.loads(hooks.read_text())["hooks"]
-        self.assertEqual(installed["PreToolUse"][0]["hooks"], group["hooks"][1:])
-        self.assertEqual(installed["SessionEnd"], [])
-        self.assertEqual(len(installed["PreToolUse"]), 2)
-        self.assertEqual(set(installed), {"SessionStart", "Stop", "UserPromptSubmit", "PreToolUse",
-                                          "PostToolUse", "PermissionRequest", "SessionEnd"})
-        self.assertEqual((self.codex / "hooks.json.pred-pluginem").read_text(), existing)
-        self.assertIn("Místní doplněk testu", (self.codex / "AGENTS.md").read_text())
+        hooks.write_text(json.dumps({"hooks": {
+            "PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": old}, foreign]}],
+            "SessionStart": [{"hooks": [{"type": "command", "command": old_quoted}]}],
+            "SessionEnd": []}}))
+        (self.codex / "AGENTS.md").write_text("<!-- Generuje plugin marek-cc-hooks -->\n# staré\n")
+        self.uklid()
+        cleaned = json.loads(hooks.read_text())["hooks"]
+        self.assertEqual(cleaned, {"PreToolUse": [{"matcher": "Bash", "hooks": [foreign]}], "SessionEnd": []})
+        self.assertFalse((self.codex / "AGENTS.md").exists())
+        self.assertTrue(scripts.exists())  # běžící relace má staré hooky ještě načtené
         stamp = hooks.stat().st_mtime_ns
-        subprocess.run(command, env=self.env, capture_output=True, check=True)
+        self.uklid()
+        self.assertFalse(scripts.exists())
         self.assertEqual(hooks.stat().st_mtime_ns, stamp)
-        self.assertEqual(config.read_bytes(), previous)
-        disabled = {**self.env, "MAREK_CODEX_HOOKS": "0"}
-        subprocess.run(command, env=disabled, capture_output=True, check=True)
-        self.assertEqual(json.loads(hooks.read_text())["hooks"]["PreToolUse"][0]["hooks"], group["hooks"][1:])
-        self.assertEqual(list(self.codex.glob("hooks.json.pred-pluginem*")),
-                         [self.codex / "hooks.json.pred-pluginem"])
-        self.assertEqual((self.codex / "hooks.json.pred-pluginem").read_text(), existing)
+        self.assertEqual(list(self.codex.glob("*pred-pluginem*")), [])
 
-    def test_aktualizace_vlastnich_souboru_bez_zalohy(self):
-        source = self.root / "zdroj"
-        shutil.copytree(HOOKS, source / "hooks", ignore=shutil.ignore_patterns("__pycache__"))
-        (source / "codex").mkdir()
-        shutil.copyfile(HOOKS.parent / "codex/AGENTS.md", source / "codex/AGENTS.md")
-        command = [sys.executable, source / "hooks/codex-start.py", "--install"]
-        subprocess.run(command, env=self.env, capture_output=True, check=True)
-
-        hooks = self.codex / "hooks.json"
-        current = json.loads(hooks.read_text())
-        current["hooks"]["Stop"][0]["hooks"][0]["timeout"] = 99
-        hooks.write_text(json.dumps(current))
-        changed_source = source / "hooks/stop-guard.py"
-        installed = self.codex / "marek-hooks/stop-guard.py"
-        for revision in (1, 2):
-            changed_source.write_text(changed_source.read_text() + f"\n# Zkušební revize {revision}\n")
-            subprocess.run(command, env=self.env, capture_output=True, check=True)
-            self.assertEqual(installed.read_bytes(), changed_source.read_bytes())
-            self.assertEqual(list(self.codex.rglob("*.pred-pluginem*")), [])
-        self.assertEqual(json.loads(hooks.read_text())["hooks"]["Stop"][0]["hooks"][0]["timeout"], 10)
-
-    def test_samostatna_instalace_vytvori_codex_home(self):
+    def test_uklid_necha_cizi_soubory(self):
+        self.codex.mkdir()
+        (self.codex / "AGENTS.md").write_text("# můj ruční soubor\n")
+        (self.codex / "hooks.json").write_text("{rozbité")
+        self.uklid()
+        self.assertEqual((self.codex / "AGENTS.md").read_text(), "# můj ruční soubor\n")
+        self.assertEqual((self.codex / "hooks.json").read_text(), "{rozbité")
+        self.codex.joinpath("AGENTS.md").unlink()
+        self.codex.joinpath("hooks.json").unlink()
+        self.codex.rmdir()
+        self.uklid()
         self.assertFalse(self.codex.exists())
-        r = subprocess.run([sys.executable, HOOKS / "codex-start.py", "--install"], env=self.env,
-                           capture_output=True, check=True)
-        self.assertIn(b"/hooks", r.stdout)
-        self.assertTrue((self.codex / "AGENTS.md").is_file())
-        self.assertTrue((self.codex / "marek-hooks/codex_transcript.py").is_file())
 
     def test_sessionstart_a_kompakt(self):
         message = self.hook("baze-start.sh", source="startup")
         self.assertIn("až po jeho reakci", message)
         self.assertIn("second-brain", message)
-        self.assertEqual(self.hook("pravidla-start.sh", source="startup"), "")
-        self.assertIn("HANDOFF.md", self.hook("pravidla-start.sh", source="compact"))
+        self.assertFalse(message.startswith(("[", "{")))
+        local = self.root / ".config/marek-hooks"
+        local.mkdir(parents=True)
+        (local / "codex-mistni.md").write_text("Místní doplněk testu\n")
+        rules = self.hook("pravidla-start.sh", source="startup")
+        self.assertTrue(rules.startswith("# Pravidla pro Codex"))
+        self.assertNotIn("<!--", rules)
+        self.assertTrue(rules.endswith("Místní doplněk testu\n"))
+        self.assertNotIn("HANDOFF.md v projektu, je-li", rules)
+        self.assertIn("[Po zhuštění kontextu]", self.hook("pravidla-start.sh", source="compact"))
 
     def test_brana_a_vypadek_konektoru(self):
         self.rules({"content": [], "isError": True})

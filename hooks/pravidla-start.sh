@@ -8,7 +8,14 @@
 # přišla dvakrát). Stdout se vloží do kontextu. Nikdy nesmí rozbít start session.
 set -uo pipefail
 if [[ ${MAREK_HOOK_KLIENT:-} == codex ]]; then
-  if grep -q '"source"[[:space:]]*:[[:space:]]*"compact"' 2>/dev/null; then
+  # Od 0.17.0 (nativní plugin Codexu): pravidla Codexu = codex/AGENTS.md + místní doplněk stroje,
+  # vložené hookem jako u Claude; ~/.codex/AGENTS.md se už nezapisuje (uklidí ho codex-uklid.py).
+  vstup="$(cat)"
+  a="$(dirname "${BASH_SOURCE[0]}")/../codex/AGENTS.md"
+  [ -r "$a" ] && grep -v '^<!--' "$a"
+  m="$HOME/.config/marek-hooks/codex-mistni.md"
+  [ -r "$m" ] && { printf '\n'; cat "$m"; }
+  if grep -q '"source"[[:space:]]*:[[:space:]]*"compact"' <<<"$vstup" 2>/dev/null; then
     printf '%s\n' '[Po zhuštění kontextu] Přečti HANDOFF.md v projektu, je-li. Ověř stav běžících delegací podle jejich ID a pokračuj od uvedeného kroku.'
   fi
   exit 0

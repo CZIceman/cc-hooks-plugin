@@ -1,4 +1,4 @@
-<!-- Generuje plugin marek-cc-hooks (codex/AGENTS.md v repu CZIceman/cc-hooks-plugin) instalátorem nebo při startu Claude Code; místní pokyny piš do doplňku. Místní doplněk stroje: ~/.config/marek-hooks/codex-mistni.md (připojí se na konec). -->
+<!-- Pravidla pro Codex z pluginu marek-cc-hooks (repo CZIceman/cc-hooks-plugin). Od 0.17.0 je vkládá hook SessionStart nativního pluginu Codexu (hooks/pravidla-start.sh); do ~/.codex/AGENTS.md se nezapisují. Místní doplněk stroje: ~/.config/marek-hooks/codex-mistni.md (připojí se na konec). -->
 # Pravidla pro Codex (všechny projekty)
 
 ## Role Codexu
