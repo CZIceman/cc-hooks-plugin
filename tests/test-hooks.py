@@ -2,6 +2,7 @@
 """Test hooků bez spuštění modelu: do skriptů se pošle vzorový JSON a porovná se výsledek.
 Výsledek: allow (bez rizika, od 0.11.0), ask, deny, nebo „-“ (hook mlčí: interaktivní nástroje, chyba, vypínač)."""
 import json, os, subprocess, sys, tempfile
+from pathlib import Path
 D = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks")
 SCR = "/tmp/claude-1000/x/scratchpad"
 os.environ["XDG_RUNTIME_DIR"] = tempfile.mkdtemp()
@@ -100,6 +101,8 @@ T = [  # (popis, výsledek, očekávané)
  # (b) tajné soubory: čtení obsahu ano, použití klíče a výpis jmen ne
  ("cat bash_history", pre("Bash", {"command": "grep token ~/.bash_history"}), "ask"),
  ("cat soukromý klíč", pre("Bash", {"command": "cat ~/.ssh/id_rsa"}), "ask"),
+ ("cat < soukromý klíč", pre("Bash", {"command": "cat < ~/.ssh/id_rsa"}), "ask"),
+ ("cat 0< soukromý klíč", pre("Bash", {"command": "cat 0< ~/.ssh/id_rsa"}), "ask"),
  ("ls ~/.ssh", pre("Bash", {"command": "ls ~/.ssh"}), "allow"),
  ("ssh -i klíč", pre("Bash", {"command": "timeout 8 ssh -o BatchMode=yes -i ~/.ssh/klic_ed25519 user@h true"}), "allow"),
  ("grep ~/.ssh/config", pre("Bash", {"command": "grep -A4 pve ~/.ssh/config"}), "allow"),
@@ -108,6 +111,20 @@ T = [  # (popis, výsledek, očekávané)
  ("AskUserQuestion projde", pre("AskUserQuestion", {"questions": [{"question": "Mám použít A, nebo B?"}]}), "-"),
  ("AskUserQuestion subagent", pre("AskUserQuestion", {"questions": [{"question": "Pokračovat?"}]}, agent_id="a1"), "-"),
 ]
+
+with tempfile.TemporaryDirectory() as fixture:
+    root = Path(fixture)
+    project = root / "projekt"
+    project.mkdir()
+    secret = root / ".ssh" / "id_rsa"
+    secret.parent.mkdir()
+    secret.write_text("Zkušební soubor bez citlivých údajů\n")
+    (project / "odkaz.txt").symlink_to(secret)
+    (project / "soubor.txt").write_text("Obyčejný zkušební soubor\n")
+    T += [
+        ("cat symlink na tajný soubor", pre("Bash", {"command": "cat odkaz.txt"}, cwd=str(project)), "ask"),
+        ("cat < běžný soubor", pre("Bash", {"command": "cat < soubor.txt"}, cwd=str(project)), "allow"),
+    ]
 
 
 # 0.11.0: okno jen na nevratnou ztrátu dat; ostatní hook výslovně povolí (rozhodnutí Marka 18. 11. 2026)

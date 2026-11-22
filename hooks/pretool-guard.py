@@ -45,7 +45,11 @@ sys.excepthook = lambda *a: os._exit(0)
 # Codex: PreToolUse riziko zamítne, u bezpečné akce mlčí. PermissionRequest
 # se volá až při žádosti Codexu o povolení a schvaluje jen nerizikový Bash.
 CODEX = os.environ.get("MAREK_HOOK_KLIENT") == "codex"
-CODEX_ASK = ("Rizikovou akci Codex zastavil. Sděl Markovi důvod a nech rozhodnutí na něm. Důvod: ")
+CODEX_ASK = ("Rizikovou akci Codex zastavil. Jednou větou Markovi popiš, co se zastavilo a proč. "
+             "U shellové akce připoj jeden přesný příkaz, který Marek spustí sám v terminálu "
+             "nebo v Codex TUI jako `!příkaz` podle platných oprávnění. "
+             "U úpravy souboru uveď přesně, co a kde má změnit. Citlivé údaje nevypisuj. "
+             "Pojistku neobcházej. Důvod: ")
 
 
 def out(decision, reason):
@@ -230,6 +234,9 @@ if EVENT == "PostToolUse":
 if os.environ.get("MAREK_DOHLED", "on").strip().lower() != "off":
     if CODEX and tool == "spawn_agent":
         prompt = ti.get("message") or ti.get("prompt") or ""
+        if not prompt and isinstance(ti.get("items"), list):
+            prompt = "\n".join(item["text"] for item in ti["items"] if isinstance(item, dict)
+                               and item.get("type") == "text" and isinstance(item.get("text"), str))
         if "HOTOVO:" not in prompt or "PŘI CHYBĚ:" not in prompt:
             out("deny", "Subagent musí dostat smlouvu HOTOVO, ODHAD, SIGNÁL, PŘI CHYBĚ.")
     elif not CODEX and tool == "Agent":
@@ -600,7 +607,7 @@ def check(words, ecwd, remote):
                 problems.append(f"přepis souboru v datech, který nejde vrátit ({p})")
             continue
         if re.fullmatch(r"[0-9]*<+", a) and i + 1 < len(args):
-            if CODEX and not remote and a.endswith("<"):
+            if not remote and a.endswith("<"):
                 path = args[i + 1]
                 if is_secret(path) or is_secret(real(path, ecwd) or ""):
                     problems.append("čtení tajného souboru (klíče, historie, tokeny)")
@@ -690,7 +697,7 @@ def check(words, ecwd, remote):
         for j, a in enumerate(args):
             if j and args[j - 1] == "-i" and head in ("scp", "rsync", "sftp", "ssh"):
                 continue
-            if is_secret(a) or (CODEX and is_secret(real(a, ecwd) or "")):
+            if is_secret(a) or is_secret(real(a, ecwd) or ""):
                 problems.append("čtení tajného souboru (klíče, historie, tokeny)")
                 break
     return ecwd

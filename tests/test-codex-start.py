@@ -47,7 +47,7 @@ os.makedirs(os.path.join(h, ".config", "marek-hooks"))
 open(os.path.join(h, ".config", "marek-hooks", "codex-mistni.md"), "w").write("## Místní\n- tajný topic\n")
 run(h)
 chk("místní doplněk na konci", rd(dst).endswith("\n## Místní\n- tajný topic\n"), True)
-chk("před přepsáním i spravovaný soubor zálohujeme", os.path.exists(dst + ".pred-pluginem"), True)
+chk("bez zálohy (soubor byl od pluginu)", os.path.exists(dst + ".pred-pluginem"), False)
 
 # 5. ruční soubor bez značky se zazálohuje, druhá záloha s časem
 h2 = tempfile.mkdtemp(); os.mkdir(os.path.join(h2, ".codex")); d2 = os.path.join(h2, ".codex", "AGENTS.md")

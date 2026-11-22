@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -92,6 +93,30 @@ class CodexHooks(unittest.TestCase):
         disabled = {**self.env, "MAREK_CODEX_HOOKS": "0"}
         subprocess.run(command, env=disabled, capture_output=True, check=True)
         self.assertEqual(json.loads(hooks.read_text())["hooks"]["PreToolUse"][0]["hooks"], group["hooks"][1:])
+        self.assertEqual(list(self.codex.glob("hooks.json.pred-pluginem*")),
+                         [self.codex / "hooks.json.pred-pluginem"])
+        self.assertEqual((self.codex / "hooks.json.pred-pluginem").read_text(), existing)
+
+    def test_aktualizace_vlastnich_souboru_bez_zalohy(self):
+        source = self.root / "zdroj"
+        shutil.copytree(HOOKS, source / "hooks", ignore=shutil.ignore_patterns("__pycache__"))
+        (source / "codex").mkdir()
+        shutil.copyfile(HOOKS.parent / "codex/AGENTS.md", source / "codex/AGENTS.md")
+        command = [sys.executable, source / "hooks/codex-start.py", "--install"]
+        subprocess.run(command, env=self.env, capture_output=True, check=True)
+
+        hooks = self.codex / "hooks.json"
+        current = json.loads(hooks.read_text())
+        current["hooks"]["Stop"][0]["hooks"][0]["timeout"] = 99
+        hooks.write_text(json.dumps(current))
+        changed_source = source / "hooks/stop-guard.py"
+        installed = self.codex / "marek-hooks/stop-guard.py"
+        for revision in (1, 2):
+            changed_source.write_text(changed_source.read_text() + f"\n# Zkušební revize {revision}\n")
+            subprocess.run(command, env=self.env, capture_output=True, check=True)
+            self.assertEqual(installed.read_bytes(), changed_source.read_bytes())
+            self.assertEqual(list(self.codex.rglob("*.pred-pluginem*")), [])
+        self.assertEqual(json.loads(hooks.read_text())["hooks"]["Stop"][0]["hooks"][0]["timeout"], 10)
 
     def test_samostatna_instalace_vytvori_codex_home(self):
         self.assertFalse(self.codex.exists())
@@ -158,6 +183,15 @@ class CodexHooks(unittest.TestCase):
         self.assertEqual(permission.get("decision"), {"behavior": "allow"})
         self.assertEqual(self.guard("apply_patch", "PermissionRequest", command=patch), {})
 
+    def test_zamitnuti_popise_rucni_krok(self):
+        self.rules()
+        decision = self.guard("Bash", command="cat < ~/.ssh/id_rsa")
+        self.assertEqual(decision["permissionDecision"], "deny")
+        reason = decision["permissionDecisionReason"]
+        for part in ("Jednou větou", "co se zastavilo a proč", "jeden přesný příkaz", "Marek spustí sám",
+                     "`!příkaz`", "co a kde má změnit", "Pojistku neobcházej"):
+            self.assertIn(part, reason)
+
     def test_stop_a_dokumentace(self):
         start = self.event("task_started", turn_id=self.turn)
         self.rollout(start, self.user("Oprav to."))
@@ -176,6 +210,11 @@ class CodexHooks(unittest.TestCase):
         self.rules()
         self.assertEqual(self.guard("spawn_agent", message="Zpracuj úkol.")["permissionDecision"], "deny")
         self.assertEqual(self.guard("spawn_agent", message="HOTOVO: výsledek. PŘI CHYBĚ: napiš."), {})
+        items = [{"type": "text", "text": "HOTOVO: výsledek."},
+                 {"type": "text", "text": "PŘI CHYBĚ: napiš."}]
+        self.assertEqual(self.guard("spawn_agent", items=items), {})
+        image = {"type": "image", "text": "HOTOVO: PŘI CHYBĚ:"}
+        self.assertEqual(self.guard("spawn_agent", items=[image])["permissionDecision"], "deny")
         start = self.event("task_started", turn_id=self.turn)
         spawn = self.event("collab_agent_spawn_end", new_thread_id=PEER, status="running")
         process = self.event("exec_command_begin", call_id="call-1", process_id="1234")

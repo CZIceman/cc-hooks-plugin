@@ -26,24 +26,30 @@ EVENTS = {
 }
 SUPPORT = ("codex_transcript.py", "dohled.py")
 CLIENT = ("env", "MAREK_HOOK_KLIENT=codex")
+AGENTS_MARK = b"Generuje plugin marek-cc-hooks"
 
 def enabled(name):
     return os.environ.get(name, "1").strip() != "0"
 
 
-def write_if_changed(path, data, mode=0o600):
+def write_if_changed(path, data, mode=0o600, *, backup=None):
     previous = path.read_bytes() if path.exists() else None
     if previous == data:
         return
-    if previous is not None:
-        backup = path.with_name(path.name + ".pred-pluginem")
-        if backup.exists():
-            backup = backup.with_name(backup.name + "-" + time.strftime("%Y%m%d-%H%M%S"))
-            if backup.exists():
-                backup = backup.with_name(backup.name + "-" + str(time.time_ns()))
-        fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as saved:
-            saved.write(previous)
+    if previous is not None and (backup == "once" or (backup == "manual" and AGENTS_MARK not in previous)):
+        saved_path = path.with_name(path.name + ".pred-pluginem")
+        if backup == "manual" and saved_path.exists():
+            saved_path = saved_path.with_name(saved_path.name + "-" + time.strftime("%Y%m%d-%H%M%S"))
+            if saved_path.exists():
+                saved_path = saved_path.with_name(saved_path.name + "-" + str(time.time_ns()))
+        try:
+            fd = os.open(saved_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            if backup != "once":
+                raise
+        else:
+            with os.fdopen(fd, "wb") as saved:
+                saved.write(previous)
     with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".marek-hooks-", delete=False) as tmp:
         tmp.write(data)
         staged = Path(tmp.name)
@@ -63,7 +69,7 @@ def install_agents(codex, config_dir):
         extra = local.read_text(encoding="utf-8").strip("\n")
         if extra:
             rules += "\n\n" + extra
-    write_if_changed(codex / "AGENTS.md", (rules + "\n").encode())
+    write_if_changed(codex / "AGENTS.md", (rules + "\n").encode(), backup="manual")
 
 
 def managed_handler(handler, commands):
@@ -82,6 +88,7 @@ def install_hooks(codex):
         raise ValueError("hooks.json musí obsahovat objekt hooks.")
     hook_config = config.setdefault("hooks", {})
     before = json.dumps(config, ensure_ascii=False)
+    has_foreign_config = bool(config.keys() - {"hooks"} or hook_config.keys() - EVENTS.keys())
     scripts = codex / "marek-hooks"
     commands = {(*CLIENT, interpreter, str(scripts / name))
                 for entries in EVENTS.values() for interpreter, name, _ in entries}
@@ -95,6 +102,8 @@ def install_hooks(codex):
             if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
                 raise ValueError(f"hooks.json má neplatnou skupinu {event}.")
             remaining = [handler for handler in group["hooks"] if not managed_handler(handler, commands)]
+            if remaining or not group["hooks"]:
+                has_foreign_config = True
             if len(remaining) == len(group["hooks"]):
                 groups.append(group)
             elif remaining:
@@ -116,7 +125,8 @@ def install_hooks(codex):
         for name in sorted(assets):
             write_if_changed(scripts / name, (SOURCE / name).read_bytes(), 0o700)
     if before != json.dumps(config, ensure_ascii=False):
-        write_if_changed(path, (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode())
+        data = (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode()
+        write_if_changed(path, data, backup="once" if has_foreign_config else None)
 
 
 def main():

@@ -161,7 +161,8 @@ z přepisů session proti `hooks/pretool-guard.py`.
   `clean -f`, `branch -D`, `push --force`, `checkout --`, `restore`, `stash drop|clear`; mimo scratchpad a `/tmp`) a operace
   ničící disky (`mkfs`, `wipefs`, `parted`, `fdisk`, `dd of=/dev/…`, `cryptsetup luksFormat|erase`, `lvremove`…);
 - **(b) čtení obsahu tajných souborů** (`.bash_history`, soukromé klíče v `~/.ssh`, `.gnupg`, `.netrc`, `.env` a vzory
-  z `~/.config/marek-hooks/tajne.txt`). Neptá se u příkazů, které soubor jen použijí nebo vypíšou jméno (`ssh -i`, `ls`,
+  z `~/.config/marek-hooks/tajne.txt`). Od 0.16.1 se u obou klientů kontroluje i vstupní přesměrování (`<`, `0<`)
+  a skutečný cíl symbolického odkazu. Neptá se u příkazů, které soubor jen použijí nebo vypíšou jméno (`ssh -i`, `ls`,
   `stat`, `chmod`, `git`…), ani u veřejných částí `~/.ssh` (`config`, `known_hosts`, `*.pub`, `authorized_keys`);
 - **(c) změnu nastavení a hooků Claude Code a klíčů:** zápis, úprava i mazání v `~/.claude/settings*.json`, `~/.claude/hooks`,
   `~/.claude/plugins`, `~/.config/marek-hooks`, `/etc/claude-code`, `~/.ssh`, `~/.gnupg` (i přes Edit/Write).
@@ -384,7 +385,7 @@ Nouzově odeber `PreToolUse`, `Stop` a `UserPromptSubmit` z `hooks/hooks.json`.
 
 ## Codex (0.16.0)
 
-Po získání verze 0.16.0 z repozitáře spusť v jeho kořeni:
+V kořeni aktuální verze repozitáře spusť:
 
 ```sh
 python3 hooks/codex-start.py --install
@@ -397,9 +398,11 @@ proto před společným používáním aktualizuj i Claude plugin. Balíček Cod
 závislý na marketplace. Používá soubory v `CODEX_HOME` (výchozí `~/.codex`) a
 načítá místní doplněk z `~/.config/marek-hooks/codex-mistni.md`.
 
-Při změně instalátor zazálohuje přepisované soubory jako `*.pred-pluginem*`.
-V `hooks.json` nahrazuje vlastní záznamy a zachovává cizí záznamy, i ve smíšené
-skupině. `config.toml` ponechává. Načti novou relaci, otevři `/hooks` a schval
+Instalátor zálohuje ruční `AGENTS.md` bez značky pluginu. Při prvním přepisu souboru
+`hooks.json` s cizí konfigurací uloží jeho původní obsah do `hooks.json.pred-pluginem`.
+Cizí záznamy zachovává i ve smíšené skupině. Spravované `AGENTS.md` a skripty
+v `marek-hooks/` při aktualizaci zálohu nepotřebují.
+`config.toml` ponechává. Načti novou relaci, otevři `/hooks` a schval
 nové nebo změněné definice. Pokyny Codex načte z `AGENTS.md`; na přítomnost
 globálního `AGENTS.override.md` se vztahuje přednost Codexu. `MAREK_CODEX_AGENTS=0`
 přeskočí instalaci pokynů a `MAREK_CODEX_HOOKS=0` odregistruje vlastní hooky.
@@ -409,7 +412,7 @@ Připojení MCP Second Brain se nastavuje samostatně, viz výše.
 |---|---|
 | `SessionStart` | Připomene bázi. Při `compact` připomene `HANDOFF.md`, při obnově a zhuštění upozorní na otevřené delegace zaznamenané v přepisu. |
 | `PreToolUse`, `PermissionRequest` | Bash, `apply_patch` a podporované souborové MCP nástroje používají stejná pravidla pro citlivé cesty. Strážce kontroluje i konfiguraci a přihlašovací soubory Codexu. Codex z `PreToolUse` schvalovací okno nevyvolá, rizikovou akci proto zamítne. `PermissionRequest` schvaluje dosavadní nerizikové Bash případy. Ostatní typy ponechá Codexu. Kontrola se vztahuje na volání dostupná hookům a shell zkoumá jen jako text. |
-| Brána a brzda báze | Úspěšné `pravidla` zaznamená `PostToolUse` (Codex 0.171.0 předal hooku jméno `mcp__second_brain__pravidla`). Brána uvolní práci po dvou zamítnutích. Brzda `zapis` zachovává výjimky stávajícího pravidla včetně opakovaného volání a nedostupného přepisu (viz výše). |
+| Brána a brzda báze | Úspěšné `pravidla` zaznamená `PostToolUse`. V izolovaném běhu Codexu 0.171.0 s testovacím MCP předal klient hooku jméno `mcp__second_brain__pravidla`. Brána uvolní práci po dvou zamítnutích. Brzda `zapis` zachovává stávající výjimky včetně opakovaného volání a nedostupného přepisu (viz výše). |
 | `PreCompact` | Codex hookem neposkytuje instrukce modelu, který shrnuje. K navázání slouží `HANDOFF.md` a `SessionStart` po zhuštění. |
 | `Stop` | Upozornění „hotovo“ bez ověření a commit bez dokumentace hlásí přes `systemMessage`. Je-li v přepisu známá otevřená delegace, požádá o pokračování a kontrolu podle ID. Pojistka proti opakování ponechává kontrolu na jeden pokus. |
 | `UserPromptSubmit` | Při předání přes `codex queue` může zpráva nést níže uvedený obal pro ACK. Nativní zprávy mezi subagenty tímto hookem neprocházejí. |
@@ -427,3 +430,15 @@ Před nasazením projdi stávající testy v `tests/` a `python3 tests/test-code
 Pro izolované živé ověření důvěry použij `codex exec --dangerously-bypass-hook-trust … < /dev/null`
 nad předem zkontrolovanými testovacími hooky. Běžná relace používá schválení přes
 `/hooks`. Pro brzdu zápisu, dohled a kontrolu dokončení musí mít relace přepis. V Codexu 0.171.0 výstup `exec --json` nezahrnuje zprávy o běhu hooků.
+
+### 0.16.1
+
+- Sdílený strážce používá stejné kontroly vstupního přesměrování a symbolických odkazů u obou klientů.
+- Aktualizace Codexu zálohuje jen původní uživatelskou konfiguraci podle pravidel výše.
+- Při zamítnutí Codex uvede jednou větou co a proč a přidá přesný příkaz pro Marka nebo popis ruční úpravy.
+  Ručně zadaný `!příkaz` v TUI podléhá platným oprávněním. [Klávesové zkratky CLI](https://learn.chatgpt.com/docs/cli/reference#interactive-shortcuts)
+- Místní přepisy obsahují `collaboration.spawn_agent` s polem `message`. U nativního
+  `spawn_agent` strážce ověřuje smlouvu také ve strukturovaném vstupu `items`, který podporuje
+  Codex v1. [Schéma nástroje](https://github.com/openai/codex/blob/rust-v0.171.0/codex-rs/core/src/tools/handlers/multi_agents_spec.rs#L571-L580)
+- Pole `agent_id` ve vstupu `PreToolUse` pro nativního subagenta potvrzuje zdroj Codexu 0.171.0.
+  Prohlédnuté přepisy neobsahovaly vstup tohoto hooku od subagenta. [Zdroj Codexu](https://github.com/openai/codex/blob/rust-v0.171.0/codex-rs/core/src/hook_runtime.rs#L1038-L1055)
