@@ -441,4 +441,4 @@ nad předem zkontrolovanými testovacími hooky. Běžná relace používá schv
   `spawn_agent` strážce ověřuje smlouvu také ve strukturovaném vstupu `items`, který podporuje
   Codex v1. [Schéma nástroje](https://github.com/openai/codex/blob/rust-v0.171.0/codex-rs/core/src/tools/handlers/multi_agents_spec.rs#L571-L580)
 - Pole `agent_id` ve vstupu `PreToolUse` pro nativního subagenta potvrzuje zdroj Codexu 0.171.0.
-  Prohlédnuté přepisy neobsahovaly vstup tohoto hooku od subagenta. [Zdroj Codexu](https://github.com/openai/codex/blob/rust-v0.171.0/codex-rs/core/src/hook_runtime.rs#L1038-L1055)
+  Prohlédnuté přepisy neobsahovaly vstup tohoto hooku od subagenta. [Zdroj Codexu](https://github.com/openai/codex/blob/rust-v0.171.0/codex-rs/core/src/hook_runtime.rs#L207-L210), [jen u subagenta](https://github.com/openai/codex/blob/rust-v0.171.0/codex-rs/core/src/hook_runtime.rs#L1088-L1106)
