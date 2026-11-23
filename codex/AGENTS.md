@@ -29,6 +29,7 @@
 ## Second Brain (znalostní báze, MCP server `second-brain`)
 - U otázek o našich systémech, projektech, serverech a nástrojích nejdřív hledej v bázi (`pravidla` jednou za relaci, pak `hledej`, 1–3 klíčová slova) a teprve potom odpovídej nebo řeš. Možná jsme to už řešili, nebo víme, co nefunguje.
 - Výsledek (zjištění, návrh, měření, provedenou změnu) nejdřív předlož Markovi. Do báze (`zapis`) zapiš až po jeho reakci: po souhlasu, nebo když pokračuje dál bez námitky. Jednu poznámku jednou za téma, včetně slepých uliček a chyb. Výjimky: Marek o zápis výslovně požádal, nebo úloha běží bez Marka (zadání od Claude); tehdy jednou na konci.
+- Do báze patří jen to, co potřebuje někdo jiný a co platí i po skončení práce: poučení, rozhodnutí s důvody, postupy, popis systému. Deník práce (stav, plán, otevřené body, průběh, měření z jednotlivých dnů) patří do projektu (`HANDOFF.md`, README, dokumentace v jeho gitu).
 - Před prvním zápisem `pravidla(cast="zapis")`. U `zapis` vyplň `kdo` = `codex-<stroj>` (např. `codex-fedora`) a `proc` jednou větou.
 
 ## Samostatná práce

@@ -15,7 +15,8 @@ cat <<'TEXT'
 Máme sdílenou znalostní bázi Second Brain (konektor MCP). Než začneš řešit problém nebo cokoli hledat,
 zavolej `pravidla` (jednou za session) a `hledej` (1–3 klíčová slova). Je to levné a často to ušetří
 práci: možná jsme to už řešili, nebo víme, co nefunguje. Výsledek nejdřív předlož Markovi; do báze (`zapis`)
-zapisuj až po jeho reakci, jednou za téma, včetně slepých uliček a chyb (ať se neopakují).
+zapisuj až po jeho reakci, jednou za téma, včetně slepých uliček a chyb (ať se neopakují). Do báze jen to,
+co potřebuje někdo jiný a co platí i po skončení práce; deník práce (stav, plán, průběh) patří do projektu.
 TEXT
 if [[ ${MAREK_HOOK_KLIENT:-} == codex ]]; then
   printf '%s\n' 'Použij nástroje MCP serveru second-brain. Pokud je konektor nedostupný, uveď to.'

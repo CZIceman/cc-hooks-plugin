@@ -20,8 +20,13 @@
 - Nejde-li něco ověřit, napiš přesně, co je hotové, co ne a proč.
 - Pojistky a režimy „jen čtení“ nebo dry-run ověř na efektu (např. md5 vstupu před a po), ne podle exit kódu. Neznámý přepínač se nesmí tiše ignorovat.
 
+## Deník do projektu, poučení do báze
+- Rozhoduje, kdo to bude číst. Deník práce (stav, plán, otevřené body, průběh, měření z jednotlivých dnů, zadání) čte agent, který bude pokračovat: patří do projektu (`HANDOFF.md`, README, dokumentace v jeho gitu), ne do báze. Nemá-li projekt kam deník psát, založ `HANDOFF.md` v jeho složce.
+- Do báze Second Brain patří jen to, co potřebuje někdo jiný a co platí i po skončení práce: poučení (co nefungovalo a proč, slepé uličky), rozhodnutí s důvody, postupy a popis systému (co kde běží, jak se tam dostat). Projekt má v bázi rozcestník: co to je, kde má dokumentaci (stroj, cesta) a trvalá poučení.
+- Výjimka jen na Markův výslovný pokyn: krátký seznam otevřených bodů v bázi, bez průběhu, aby byl vidět i z telefonu.
+
 ## Nejdřív výsledek, pak zápis do báze
-- Výsledek (zjištění, návrh, měření, provedenou změnu) nejdřív předlož Markovi. V tahu, kde na něm pracuješ, do báze Second Brain nezapisuj, ani když je báze dokumentací projektu; na konec hlášení napiš jedním řádkem, co a kam zapíšeš.
+- Výsledek (zjištění, návrh, měření, provedenou změnu) nejdřív předlož Markovi. V tahu, kde na něm pracuješ, do báze Second Brain nezapisuj; na konec hlášení napiš jedním řádkem, co a kam zapíšeš.
 - Do báze zapiš až po Markově reakci: po souhlasu, nebo když pokračuje dál bez námitky. Při námitce nejdřív oprav; zapisuje se až odsouhlasená verze.
 - Jednu poznámku zapisuj jednou za téma, ne po každém kroku. Slepé uličky a chyby patří do téhož zápisu.
 - Výjimky: Marek o zápis výslovně požádal (např. výtah dokumentu), nebo session běží bez Marka (naplánovaná úloha, práce pro řídící session); tehdy zapiš jednou na konci práce.

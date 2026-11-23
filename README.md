@@ -442,6 +442,19 @@ zprávy. Odeslání přes `codex queue` patří jen do výslovně povolené komu
 Tvrzený odesílatel v obalu sám neověřuje identitu. Zprávy přes ntfy se řídí místními
 pravidly dané relace.
 
+### 0.17.2
+
+- **Deník do projektu, poučení do báze** (rozhodnutí Marka 23. 11. 2026). Měření báze ukázalo 47 poznámek přepsaných víc než
+  10× (nejvíc 63×), které sloužily jako deník nebo dokumentace projektu. Příčina: hranice v pravidlech chyběla a `pravidla.txt`
+  s bází jako dokumentací projektu přímo počítal („ani když je báze dokumentací projektu“).
+- Nová sekce `pravidla.txt` „Deník do projektu, poučení do báze“: rozhoduje, kdo to bude číst. Deník práce (stav, plán, otevřené
+  body, průběh, měření z jednotlivých dnů, zadání) patří do projektu (`HANDOFF.md`, README, dokumentace v gitu); do báze jen to,
+  co potřebuje někdo jiný a co platí i po skončení práce (poučení, rozhodnutí s důvody, postupy, popis systému) a rozcestník
+  projektu. Výjimka na Markův pokyn: krátký seznam otevřených bodů v bázi. Totéž zkráceně v `codex/AGENTS.md`,
+  `chatgpt/vlastni-pokyny.md` a v připomínce `baze-start.sh`.
+- Pravidlo hooky nevynucují. Odmítnutí nové poznámky s datem v názvu souboru na serveru báze je zadané session edge (23. 11. 2026, při vydání 0.17.2 nenasazeno).
+- Marek: po změně `chatgpt/vlastni-pokyny.md` vložit nový text do ChatGPT ručně; profil claude.ai doplnit o novou sekci.
+
 ### 0.17.1
 
 - **Oprava: hook zamítal každého subagenta.** `pretool-guard.py` od 0.12.0 vyžadoval u nástroje `Agent` parametr
