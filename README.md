@@ -139,6 +139,7 @@ z přepisů session proti `hooks/pretool-guard.py`.
   Výjimka: `AskUserQuestion`, `ExitPlanMode`, `EnterPlanMode` (hook mlčí, ať allow neobejde dialog). Vypínač bez nové
   verze: `MAREK_HOOK_ALLOW=off` (chování jako 0.10.0). Chyba skriptu = bez výstupu (bez allow).
   Neověřeno: zda hook `allow` v režimu `auto` přeskočí i klasifikátor; ověřit na první session s 0.11.0.
+- **Kořen `/` a `/*` je vždy riziko**; vzdálené `~` = `/home/~`; `cd` na neznámý cíl = neznámý adresář.
 - **Mazání a přepis vyvolá okno jen v datovém úložišti a jen když nejde vrátit.**
   - Vratné: `/tmp`, `/var/tmp`, `/dev/shm`, `/run/user/<uid>` (mimo `gvfs` a `doc`), scratchpad, `~/.cache`,
     `~/.claude/jobs/*/tmp`, paměť Claude, adresář projektu (`CLAUDE_PROJECT_DIR` i `cwd`; domov a `/` ne), `__pycache__`
@@ -391,10 +392,10 @@ nebo ručně `--install` z klonu repa); bez běžícího Claude Code se Codex ne
 **Jak:** Codex 0.171.0 umí pluginy z Git marketplace i s hooky (zdroj `codex-rs/core-plugins/src/manifest.rs`,
 pole `hooks`) a marketplace z Gitu při každém startu na pozadí sám aktualizuje (`manager.rs`,
 `plugins-marketplace-auto-upgrade`, `PluginGitMode::Automatic`). Manifest hledá v pořadí `.codex-plugin/plugin.json`,
-`.claude-plugin/plugin.json` (`exec-server-protocol/src/protocol.rs`), marketplace čte i z `.claude-plugin/marketplace.json`.
+`.claude-plugin/plugin.json`, `.cursor-plugin/plugin.json` (`exec-server-protocol/src/protocol.rs`), marketplace čte i z `.claude-plugin/marketplace.json`.
 Repo je proto plugin pro oba klienty: Claude čte `.claude-plugin/plugin.json` a `hooks/hooks.json`, Codex
 `.codex-plugin/plugin.json` a `hooks/codex-hooks.json`. Skripty jsou společné, Codex je spouští s `MAREK_HOOK_KLIENT=codex`
-přes `${PLUGIN_ROOT}` (Codex ho nastavuje hookům pluginu, `hooks/src/engine/discovery.rs`). Verze v obou manifestech je stejná.
+přes `${PLUGIN_ROOT}` (Codex nastavuje hookům pluginu `PLUGIN_ROOT` i `CLAUDE_PLUGIN_ROOT`, `hooks/src/engine/discovery.rs`). Verze v obou manifestech je stejná.
 
 **Instalace (na každém stroji jednou, bez Claude Code):**
 
@@ -427,7 +428,7 @@ zamítnut s příkazem `!rm …` pro Marka. Claude plugin do `~/.codex` od 0.17.
 | Kdy | Chování Codexu |
 |---|---|
 | `SessionStart` | Připomene bázi. Při `compact` připomene `HANDOFF.md`, při obnově a zhuštění upozorní na otevřené delegace zaznamenané v přepisu. |
-| `PreToolUse`, `PermissionRequest` | Bash, `apply_patch` a podporované souborové MCP nástroje používají stejná pravidla pro citlivé cesty. Strážce kontroluje i konfiguraci a přihlašovací soubory Codexu. Codex z `PreToolUse` schvalovací okno nevyvolá, rizikovou akci proto zamítne. `PermissionRequest` schvaluje dosavadní nerizikové Bash případy. Ostatní typy ponechá Codexu. Kontrola se vztahuje na volání dostupná hookům a shell zkoumá jen jako text. |
+| `PreToolUse`, `PermissionRequest` | Bash, `apply_patch` a podporované souborové MCP nástroje používají stejná pravidla pro citlivé cesty. Strážce kontroluje i konfiguraci a přihlašovací soubory Codexu (`~/.codex/{AGENTS.md,auth.json,config.toml,hooks.json,marek-hooks,rules,plugins}` a `/etc/codex`). Codex z `PreToolUse` schvalovací okno nevyvolá, rizikovou akci proto zamítne. `PermissionRequest` schvaluje dosavadní nerizikové Bash případy. Ostatní typy ponechá Codexu. Kontrola se vztahuje na volání dostupná hookům a shell zkoumá jen jako text. |
 | Brána a brzda báze | Úspěšné `pravidla` zaznamená `PostToolUse`. V izolovaném běhu Codexu 0.171.0 s testovacím MCP předal klient hooku jméno `mcp__second_brain__pravidla`. Brána uvolní práci po dvou zamítnutích. Brzda `zapis` zachovává stávající výjimky včetně opakovaného volání a nedostupného přepisu (viz výše). |
 | `PreCompact` | Codex hookem neposkytuje instrukce modelu, který shrnuje. K navázání slouží `HANDOFF.md` a `SessionStart` po zhuštění. |
 | `Stop` | Upozornění „hotovo“ bez ověření a commit bez dokumentace hlásí přes `systemMessage`. Je-li v přepisu známá otevřená delegace, požádá o pokračování a kontrolu podle ID. Pojistka proti opakování ponechává kontrolu na jeden pokus. |
