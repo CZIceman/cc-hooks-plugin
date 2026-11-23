@@ -52,6 +52,9 @@ CODEX_ASK = ("Rizikovou akci Codex zastavil. Jednou větou Markovi popiš, co se
              "Pojistku neobcházej. Důvod: ")
 
 
+UPDATED = None  # upravený vstup nástroje (updatedInput), který hook vrátí spolu s povolením
+
+
 def out(decision, reason):
     if CODEX:
         if EVENT == "PermissionRequest":
@@ -63,8 +66,10 @@ def out(decision, reason):
             sys.exit(0)  # PreToolUse v Codexu allow nepodporuje
         reason = (CODEX_ASK + reason) if decision == "ask" else reason
         decision = "deny"
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
-          "permissionDecision": decision, "permissionDecisionReason": reason}}, ensure_ascii=False))
+    o = {"hookEventName": "PreToolUse", "permissionDecision": decision, "permissionDecisionReason": reason}
+    if UPDATED is not None and decision != "deny":
+        o["updatedInput"] = UPDATED
+    print(json.dumps({"hookSpecificOutput": o}, ensure_ascii=False))
     sys.exit(0)
 
 
@@ -77,6 +82,8 @@ def finish():
     """Nic rizikového nenalezeno: výslovné povolení (plugin je jediný strážce), jinak mlčení."""
     if HOOK_ALLOW and tool not in INTERACTIVE:
         out("allow", "marek-cc-hooks: bez rizika")
+    if UPDATED is not None:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": UPDATED}}, ensure_ascii=False))
     sys.exit(0)
 
 
@@ -227,7 +234,8 @@ if EVENT == "PostToolUse":
     sys.exit(0)
 
 # ---------- dohled nad delegovanou prací (0.12.0): zadání musí mít smlouvu ----------
-# Agent: VŽDY run_in_background true (jakýkoli subagent_type) a prompt s „HOTOVO:“ i „PŘI CHYBĚ:“. Agent v popředí
+# Agent: prompt s „HOTOVO:“ i „PŘI CHYBĚ:“ a běh na pozadí (jakýkoli subagent_type): výslovné false = deny, chybějící
+# parametr doplní hook na true (updatedInput). Agent v popředí
 # drží tah šéfa a budík (CronCreate) se spouští jen při nečinnosti, zaseknutého by nikdo nehlídal (Marek 19. 11.).
 # SendMessage nad 300 znaků musí mít oba štítky, kromě zpráv začínajících [ACK] / STAV: / ODPOVĚĎ: a zpráv „main“.
 # Vypínač: MAREK_DOHLED=off.
@@ -241,11 +249,17 @@ if os.environ.get("MAREK_DOHLED", "on").strip().lower() != "off":
             out("deny", "Subagent musí dostat smlouvu HOTOVO, ODHAD, SIGNÁL, PŘI CHYBĚ.")
     elif not CODEX and tool == "Agent":
         _bg = ti.get("run_in_background")
-        _bg = _bg is True or (isinstance(_bg, str) and _bg.strip().lower() == "true")
         _pr = ti.get("prompt") if isinstance(ti.get("prompt"), str) else ""
-        if not _bg or "HOTOVO:" not in _pr or "PŘI CHYBĚ:" not in _pr:
-            out("deny", "Subagent musí běžet na pozadí (run_in_background: true) a mít smlouvu HOTOVO, ODHAD, SIGNÁL, "
-                "PŘI CHYBĚ. Agent v popředí blokuje tah a během něj se nespustí žádný budík, takže by ho nikdo nehlídal.")
+        if "HOTOVO:" not in _pr or "PŘI CHYBĚ:" not in _pr:
+            out("deny", "Subagent musí dostat smlouvu HOTOVO, ODHAD, SIGNÁL, PŘI CHYBĚ.")
+        if _bg is None:
+            # Od 0.17.1: chybějící parametr doplní hook sám. Claude Code ho u některých modelů z nástroje odebírá
+            # a agenta pouští vždy na pozadí (Fable 5.2, 2.1.329, 23. 11. 2026); hook ho pak nevidí, ani když ho
+            # model pošle, a dřívější „deny bez parametru“ zamítlo každého agenta. Kde parametr existuje, platí true.
+            UPDATED = {**ti, "run_in_background": True}
+        elif not (_bg is True or (isinstance(_bg, str) and _bg.strip().lower() == "true")):
+            out("deny", "Subagent musí běžet na pozadí (run_in_background vynech nebo dej true). Agent v popředí blokuje "
+                "tah a během něj se nespustí žádný budík, takže by ho nikdo nehlídal.")
     elif not CODEX and tool == "SendMessage":
         _m = ti.get("message")
         if isinstance(_m, str) and len(_m) > 300 and str(ti.get("to", "")).lower() != "main" \

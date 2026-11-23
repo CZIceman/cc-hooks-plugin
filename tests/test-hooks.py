@@ -234,14 +234,27 @@ del os.environ["MAREK_ZAPIS_BRZDA"]
 # dohled nad delegací (0.12.0): Agent jen na pozadí a se smlouvou, dlouhé zadání jiné session se smlouvou
 SM = "HOTOVO: soubor x. ODHAD: 10 min. SIGNÁL: každých 5 min. PŘI CHYBĚ: opravit a hlásit. "
 LONG = "Výpočet variant a tabulka výsledků. " * 12  # > 300 znaků
-T += [("Agent v popředí se smlouvou", pre("Agent", {"prompt": SM}), "deny"),
+def upd(tool, ti, **kw):  # updatedInput, který hook vrátí (None, když žádný)
+    r = subprocess.run([sys.executable, os.path.join(D, "pretool-guard.py")], capture_output=True, text=True,
+                       input=json.dumps({"tool_name": tool, "tool_input": ti, "session_id": "s1", "scratchpad_dir": SCR, **kw}))
+    return r.returncode, (json.loads(r.stdout)["hookSpecificOutput"].get("updatedInput") if r.stdout.strip() else None)
+# od 0.17.1: chybějící run_in_background doplní hook (Claude Code ho u některých modelů z nástroje odebírá)
+T += [("Agent bez parametru se smlouvou: allow", pre("Agent", {"prompt": SM}), "allow"),
+      ("  hook doplní run_in_background true a zbytek vstupu nechá",
+       upd("Agent", {"prompt": SM, "description": "d", "subagent_type": "Explore"}),
+       {"prompt": SM, "description": "d", "subagent_type": "Explore", "run_in_background": True}),
+      ("  s parametrem true hook vstup nemění", upd("Agent", {"prompt": SM, "run_in_background": True}), None),
+      ("  zamítnutí vstup nemění", upd("Agent", {"prompt": "x"}), None),
+      ("  jiný nástroj vstup nemění", upd("Bash", {"command": "ls"}), None),
+      ("Agent bez parametru a bez smlouvy", pre("Agent", {"prompt": "x"}), "deny"),
+      ("Agent v popředí (řetězec false) se smlouvou", pre("Agent", {"prompt": SM, "run_in_background": "false"}), "deny"),
       ("Agent v popředí (false) se smlouvou", pre("Agent", {"prompt": SM, "run_in_background": False}), "deny"),
       ("Agent na pozadí bez smlouvy", pre("Agent", {"prompt": "x", "run_in_background": True}), "deny"),
       ("Agent na pozadí jen s HOTOVO", pre("Agent", {"prompt": "HOTOVO: x", "run_in_background": True}), "deny"),
       ("Agent na pozadí jen s PŘI CHYBĚ", pre("Agent", {"prompt": "PŘI CHYBĚ: x", "run_in_background": True}), "deny"),
       ("Agent na pozadí se smlouvou", pre("Agent", {"prompt": SM, "run_in_background": True}), "allow"),
       ("Agent na pozadí se smlouvou (řetězec true)", pre("Agent", {"prompt": SM, "run_in_background": "true"}), "allow"),
-      ("Agent Explore v popředí taky deny", pre("Agent", {"prompt": SM, "subagent_type": "Explore"}), "deny"),
+      ("Agent Explore v popředí (false) taky deny", pre("Agent", {"prompt": SM, "subagent_type": "Explore", "run_in_background": False}), "deny"),
       ("Agent volaný subagentem se hlídá taky", pre("Agent", {"prompt": "x"}, agent_id="a1"), "deny"),
       ("SendMessage dlouhá bez smlouvy", pre("SendMessage", {"to": "bridge:session_X", "message": LONG}), "deny"),
       ("SendMessage dlouhá jen s HOTOVO", pre("SendMessage", {"to": "bridge:session_X", "message": LONG + "HOTOVO: x"}), "deny"),
@@ -280,6 +293,6 @@ bad = 0
 for n, (rc, dec), exp in T:
     ok = rc == 0 and dec == exp
     bad += not ok
-    print(("OK  " if ok else "CHYBA"), f"{n:34} -> {dec:6} (čekáno {exp}, rc={rc})")
+    print(("OK  " if ok else "CHYBA"), f"{n:34} -> {str(dec)[:60]:6} (čekáno {exp}, rc={rc})")
 print("pretool: selhalo", bad, "z", len(T))
 sys.exit(1 if bad else 0)

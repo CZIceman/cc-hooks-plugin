@@ -293,8 +293,8 @@ pro vnějšího hlídače) a C (ntfy, vnější hlídač) se nedělají.
 - **B1 + B2, `stop-guard.py` + sdílený modul `hooks/dohled.py`: Stop blokuje, když je otevřená delegace a žádný budík.**
   Kniha delegací se **nevede v souboru ani novými hooky**; Stop ji při každém volání odvodí z přepisu session (`transcript_path`).
   Blok je vždy `decision: block`, i při `MAREK_STOP_MODE=advisory`; při `stop_hook_active` hook mlčí (žádná smyčka).
-  - *Otevřená delegace:* (a) `Agent` s `run_in_background` true (bool i řetězec `"true"`), který se opravdu spustil
-    (`toolUseResult.status == "async_launched"`); (b) `Bash` s `run_in_background` true (`toolUseResult.backgroundTaskId`);
+  - *Otevřená delegace:* (a) `Agent`, který se opravdu spustil na pozadí (`toolUseResult.status == "async_launched"`);
+    parametr `run_in_background` se od 0.17.1 nevyžaduje, jen výslovné `false` znamená popředí a nesleduje se; (b) `Bash` s `run_in_background` true (`toolUseResult.backgroundTaskId`);
     (c) `SendMessage` jiné session (`recipient_kind` `session` nebo `name`, ne `main`, ne `agent`), jehož `message` obsahuje
     `HOTOVO:` a nezačíná `[ACK]`, `STAV:` ani `ODPOVĚĎ:`.
   - *Uzavření:* `<task-notification>` se stavem `completed`/`failed`/`killed`/`stopped` (user záznam i attachment `queued_command`),
@@ -308,8 +308,9 @@ pro vnějšího hlídače) a C (ntfy, vnější hlídač) se nedělají.
   - *Výkon:* přepis se čte po řádcích jako bajty a JSON se parsuje jen u řádků s klíčovými slovy; 377 MB přepis 0,5 s, 77 MB
     syntetický 0,05 s; rozpočet 1 s, po jeho překročení nebo při chybě fail-open (nic se neblokuje). Nedopsaný poslední řádek se přeskočí.
 - **B3, `pretool-guard.py`: zadání musí mít smlouvu.** `Agent` (jakýkoli `subagent_type`, i volaný subagentem) musí mít
-  `run_in_background: true` **a** prompt s `HOTOVO:` i `PŘI CHYBĚ:`, jinak `deny` („Subagent musí běžet na pozadí … Agent v popředí
-  blokuje tah a během něj se nespustí žádný budík, takže by ho nikdo nehlídal“). Důvod (Marek): i krátký subagent může běžet hodiny;
+  prompt s `HOTOVO:` i `PŘI CHYBĚ:` a nesmí mít `run_in_background: false`, jinak `deny` („Subagent musí běžet na pozadí … Agent
+  v popředí blokuje tah a během něj se nespustí žádný budík, takže by ho nikdo nehlídal“). Chybí-li `run_in_background`, hook ho
+  od 0.17.1 doplní na `true` (`updatedInput`) a volání povolí; dřív ho zamítal, viz [0.17.1](#0171). Důvod (Marek): i krátký subagent může běžet hodiny;
   agent v popředí drží tah šéfa a `CronCreate` se spouští jen při nečinnosti. `SendMessage` delší než 300 znaků musí obsahovat oba
   štítky, jinak `deny` („Zadání bez smlouvy … začni zprávu STAV: nebo ODPOVĚĎ:“); výjimky: `[ACK]`, `STAV:`, `ODPOVĚĎ:` na začátku,
   `to` = `main`, nestringová zpráva. Zbytek `pretool-guard.py` (0.11.0) beze změny.
@@ -440,6 +441,23 @@ samostatný řádek `</codex-peer>`. Hook vloží pokyn k potvrzení `[ACK]` s I
 zprávy. Odeslání přes `codex queue` patří jen do výslovně povolené komunikace.
 Tvrzený odesílatel v obalu sám neověřuje identitu. Zprávy přes ntfy se řídí místními
 pravidly dané relace.
+
+### 0.17.1
+
+- **Oprava: hook zamítal každého subagenta.** `pretool-guard.py` od 0.12.0 vyžadoval u nástroje `Agent` parametr
+  `run_in_background: true`. Claude Code ale parametr z nástroje někdy odebírá (režim „fork“: schéma ho nemá, agent běží vždy
+  na pozadí) a hodnotu poslanou modelem zahodí dřív, než ji hook uvidí. Zjištěno 23. 11. 2026 v session na Fable 5.2
+  (Claude Code 2.1.329): čtyři volání `Agent` zamítnuta, dvě z nich měla v přepisu `run_in_background: "true"`. O režimu rozhoduje
+  brána v Claude Code (`CLAUDE_CODE_FORK_SUBAGENT`, příznak na straně Anthropic), ne verze; hook ji nevidí.
+- **Nové pravidlo:** smlouva (`HOTOVO:`, `PŘI CHYBĚ:`) se vyžaduje dál; `run_in_background: false` = `deny`; chybějící parametr
+  hook doplní na `true` přes `updatedInput` a volání povolí. `dohled.py` pozná agenta na pozadí podle výsledku spuštění
+  (`async_launched`), ne podle parametru, jinak by Stop hook delegace v režimu bez parametru nehlídal.
+- **Ověřeno živě** (23. 11. 2026, Claude Code 2.1.330, `claude -p` ve zkušebním projektu s hookem z repa): Fable 5.2 i Opus 5.5
+  bez parametru → hook vrátil `allow` + `updatedInput`, výsledek „Async agent launched successfully“, žádná chyba kvůli klíči navíc.
+  **Neověřeno:** že `updatedInput` vynutí pozadí tam, kde by agent bez parametru běžel v popředí. Kontrolní běh Opus 5.5 bez
+  hooku spustil agenta na pozadí taky, režim s výchozím popředím (19. 11. 2026) se 23. 11. nepodařilo navodit.
+- **Slepá ulička:** poznat z přepisu, co model poslal, nejde. Volání nástroje se do přepisu zapíše až po hooku `PreToolUse`
+  (ověřeno značkou v příkazu: 0 výskytů v přepisu ve chvíli běhu nástroje).
 
 ### 0.17.0
 

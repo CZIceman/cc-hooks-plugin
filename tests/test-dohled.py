@@ -127,7 +127,11 @@ check("Bash na pozadí bez budíku -> block", stopdec([USER] + ba2)[1], "block")
 check("  oznámení uzavře (podle task-id)", stopdec([USER] + ba2 + [note(b2, t2, summary="Background command completed")])[1], "-")
 check("  sběrné oznámení po restartu uzavře", stopdec([USER] + ba2 + [orphan(b2, "bjine")])[1], "-")
 check("  TaskStop uzavře", stopdec([USER] + ba2 + stop(b2))[1], "-")
-check("Agent v popředí není delegace", stopdec([USER] + agent(bg=None)[2])[1], "-")
+check("Agent bez parametru spuštěný na pozadí je delegace (0.17.1)", stopdec([USER] + agent(bg=None)[2])[1], "block")
+_tf = nid()
+check("Agent bez parametru doběhlý v popředí není delegace",
+      stopdec([USER, use("Agent", {"description": "d", "prompt": "HOTOVO: x PŘI CHYBĚ: y"}, _tf),
+               res(_tf, "Výsledek agenta.", {"status": "completed", "content": []})])[1], "-")
 check("Agent run_in_background \"true\" (řetězec)", stopdec([USER] + agent(bg="true")[2])[1], "block")
 check("Agent run_in_background false", stopdec([USER] + agent(bg=False)[2])[1], "-")
 check("spuštění selhalo (is_error) není delegace", stopdec([USER] + agent(ok=False)[2])[1], "-")

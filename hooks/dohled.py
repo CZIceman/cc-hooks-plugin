@@ -4,7 +4,8 @@ Používá ho Stop hook (stop-guard.py) a SessionStart hook (dohled-start.py). K
 odvozuje se při každém volání z přepisu session (JSONL, `transcript_path` ve vstupu hooku).
 
 Otevřená delegace:
-  (a) volání Agent s run_in_background true, které se opravdu spustilo (toolUseResult.status == async_launched),
+  (a) volání Agent, které se opravdu spustilo na pozadí (toolUseResult.status == async_launched); parametr
+      run_in_background se nevyžaduje (od 0.17.1), jen výslovné false znamená popředí,
   (b) Bash s run_in_background true, které se opravdu spustilo (toolUseResult.backgroundTaskId),
   (c) SendMessage jiné session (recipient_kind session nebo name, ne „main“), jehož text obsahuje „HOTOVO:“
       a nezačíná [ACK] / STAV: / ODPOVĚĎ:.
@@ -200,7 +201,7 @@ def _scan(path, now, budget):
                 m = NAME_RX.search(l)
                 if m:
                     name = m.group(1).decode()
-                    if name in ("Agent", "Bash") and b"run_in_background" not in l:
+                    if name == "Bash" and b"run_in_background" not in l:
                         continue
                     r = _load(l)
                     if r is None or r.get("type") != "assistant":
@@ -210,7 +211,10 @@ def _scan(path, now, budget):
                             continue
                         inp = b.get("input") if isinstance(b.get("input"), dict) else {}
                         bid = b.get("id") or ("n%d" % n)
-                        if name in ("Agent", "Bash") and truthy(inp.get("run_in_background")):
+                        # Agent: rozhoduje výsledek (async_launched), ne parametr; Claude Code ho u některých modelů
+                        # nemá a agenta pouští na pozadí vždy (0.17.1). Výslovné false = popředí, nesleduje se.
+                        if (name == "Agent" and (inp.get("run_in_background") is None or truthy(inp.get("run_in_background")))) \
+                                or (name == "Bash" and truthy(inp.get("run_in_background"))):
                             desc = inp.get("description") or inp.get("prompt") or inp.get("command")
                             pending[bid] = ("agent" if name == "Agent" else "bash",
                                             {"kind": "agent" if name == "Agent" else "bash",
