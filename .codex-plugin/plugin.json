@@ -1,6 +1,6 @@
 {
   "name": "marek-cc-hooks",
-  "version": "0.17.2",
+  "version": "0.17.3",
   "description": "Pravidla a hooky marek-cc-hooks pro Codex: pravidla a připomínka báze Second Brain při startu, strážce (riziková akce se zamítne, nerizikový Bash se schválí bez okna), brána a brzda zápisu do báze, kontrola hotovo/commit při Stop, dohled delegací, ACK. Stejné skripty jako plugin pro Claude Code; Codex ho aktualizuje sám z GitHubu.",
   "author": {
     "name": "Marek"

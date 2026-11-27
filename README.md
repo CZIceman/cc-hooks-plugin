@@ -443,6 +443,17 @@ zprávy. Odeslání přes `codex queue` patří jen do výslovně povolené komu
 Tvrzený odesílatel v obalu sám neověřuje identitu. Zprávy přes ntfy se řídí místními
 pravidly dané relace.
 
+### 0.17.3
+
+- **Nabídka Workflow** (rozhodnutí Marka 27. 11. 2026). Nová sekce `pravidla.txt` „Workflow (víc agentů naráz)“: má-li práce
+  4 a víc stejných kusů s nezávislým ověřením každého, nebo jde-li o kontrolu velké změny po oblastech s vyvrácením nálezů,
+  session nabídne Markovi Workflow jednou větou (co, kolik agentů, model Sonnet nebo Opus, proč) a spustí ho až po „ano“.
+  Nenabízí se u práce na pár kroků, u postupu krok za krokem ani tam, kde stačí test. Nezávislá kontrola jiným modelem
+  zůstává Codex. Důvod: při úklidu báze 23. 11. 2026 (20 poznámek, příprava → kontrola → oprava → zápis) se Workflow hodil
+  a session ho nenabídla.
+- Jen Claude Code: Codex ani ChatGPT nástroj Workflow nemají, `codex/AGENTS.md` a `chatgpt/vlastni-pokyny.md` beze změny.
+  Hooky pravidlo nevynucují.
+
 ### 0.17.2
 
 - **Deník do projektu, poučení do báze** (rozhodnutí Marka 23. 11. 2026). Měření báze ukázalo 47 poznámek přepsaných víc než

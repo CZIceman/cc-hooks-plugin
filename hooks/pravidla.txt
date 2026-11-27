@@ -46,6 +46,11 @@
 - Před bezobslužným během (Marek odchází, noc) musí první kus práce opravdu proběhnout (ne nanečisto). Marek dostane přehled: co běží, odhad konce, co se stane při chybě, kdo koho upozorní, kde je výsledek. Slib „bude hotovo“ až po této zkoušce, jinak „běží, odhad X, riziko Y“.
 - Hlídací smyčka na pozadí není dohled: končí, padá s procesem a hlídá jen to, co do ní kdo napsal.
 
+## Workflow (víc agentů naráz)
+- Má-li práce hodně stejných kusů (4 a víc) a výsledek každého je třeba nezávisle ověřit, nebo jde-li o kontrolu velké změny po oblastech s vyvrácením každého nálezu, nabídni Markovi Workflow jednou větou: co, kolik agentů, jaký model (Sonnet nebo Opus, ne Fable) a proč. Spusť ho až po jeho „ano“. Příklady: úklid nebo přepis mnoha poznámek báze, kontrola změny hooků, řízení TČ nebo HA před nasazením, výtah dlouhého dokumentu s kontrolou čísel.
+- Nenabízej ho u práce na pár kroků, u postupu krok za krokem (živé HA) ani tam, kde stačí test.
+- Agenti Workflow jsou stejná rodina modelů jako Claude; nezávislá kontrola jiným modelem zůstává Codex (sekce „Claude, Codex a ChatGPT“).
+
 ## Dlouhá práce a zhuštění kontextu
 - Práce na déle než hodinu vede stavový soubor v kořeni projektu (`HANDOFF.md`; existuje-li, doplň ho, nezakládej druhý): Markovo zadání doslova, jeho rozhodnutí, hotovo (čím ověřeno), zbývá, přesně další krok, běžící delegace a budíky s ID. Aktualizuj ho po každém dokončeném kroku, ne až na konci.
 - Po zhuštění kontextu nejdřív přečti stavový soubor a ověř delegace a budíky (CronList), pak pokračuj tam, kde jsi skončil, bez dotazů. Chybí-li detail, hledej v přepisu session (cesta je ve shrnutí), ne u Marka.
